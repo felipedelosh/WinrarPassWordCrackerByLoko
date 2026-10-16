@@ -43,8 +43,7 @@ class DependencyInjector:
             raise ValueError("The charset cannot be empty.")
 
         # LOGGER
-        # Sustituir por el constructor real de tu clase Logger.
-        logger = Logger()
+        logger = Logger(config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
 
         # SERVICES - CRACKERS
         sequential_brute_force = SequentialBruteForceService(

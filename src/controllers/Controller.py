@@ -20,7 +20,7 @@ class Controller:
         self.output_path = os.path.join(self.path, "OUTPUT")
         self.currentDate = datetime.now().strftime("%Y-%m-%d %H:%M")
         self.config = config
-        self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
+        self.logger = dependencies["logger"]
         self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
         self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
         self.MIN_LEN = self.config.getConfig("GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK")
