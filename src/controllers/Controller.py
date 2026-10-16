@@ -8,9 +8,9 @@ import os
 import sys
 from datetime import datetime
 
-from src.CORE.ConfigController import Config
+from src.CORE.Config import Config
 from src.CORE.FolderController import FolderController
-from src.CORE.LoggerController import Logger
+from src.CORE.Logger import Logger
 from src.services.WinrarService import WinrarService
 # CRACKERS
 from src.services.CRACKER.SequentialBruteForceService import SequentialBruteForceService
