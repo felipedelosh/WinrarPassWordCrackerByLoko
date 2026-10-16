@@ -27,9 +27,16 @@ proyecto/
 │       └── abc.rar
 └── src/
     ├── __init__.py
-    └── controllers/
+    ├── controllers/
+    │   ├── __init__.py
+    │   ├── Controller.py
+    │   └── LoggerController.py
+    └── services/
         ├── __init__.py
-        └── Controller.py
+        ├── BruteForceGenerator.py
+        ├── RarPasswordTester.py
+        ├── RarExtractor.py
+        └── FileContentReader.py
 ```
 
 ## :play_or_pause_button:How to execute a project
