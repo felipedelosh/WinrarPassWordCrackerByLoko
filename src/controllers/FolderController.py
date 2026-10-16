@@ -15,6 +15,7 @@ class FolderController:
         # MAIN FOLDERS
         _folders = [
             "OUTPUT",
+            "TEMP",
             "INPUT"
         ]
 

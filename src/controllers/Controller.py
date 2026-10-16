@@ -17,24 +17,25 @@ from src.services.WinrarService import WinrarService
 
 
 class Controller:
-    # ============ CONFIG ============
-    RAR_FILE     = os.path.join("Docs", "rar_examples", "abc.rar")
     UNRAR        = "UnRAR.exe"
 
     MIN_LEN = 1
     MAX_LEN = 4   # 👈 cuidado: cada carácter más multiplica el tiempo
-    # ================================
-
     def __init__(self, path):
+        self.path = path
+        self.output_path = os.path.join(self.path, "OUTPUT")
         self.currentDate = datetime.now().strftime("%Y-%m-%d %H:%M")
         self.config = Config()
-        self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
+        
         self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
         self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
-        self.path = path
+        self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
+
+        self.RAR_FILE = self.config.getConfig("RAR_FILE_TO_CRACK")
         self.rar_path = os.path.join(self.path, self.RAR_FILE)
         self.unrar_path = os.path.join(self.path, self.UNRAR)
         self.charset = self.loadCharset()
+        FolderController.createInitalFolders(self.path, self.logger)
         
 
     # ---------- Carga de charset ----------
@@ -115,7 +116,7 @@ class Controller:
         return sum(len(charset) ** n for n in range(min_len, max_len + 1))
 
     def extractAndPrint(self, password):
-        out_dir = WinrarService.extractContent(self.rar_path, self.unrar_path, password)
+        out_dir = WinrarService.extractContent(self.rar_path, self.unrar_path, password, self.output_path)
         if not out_dir:
             return
 

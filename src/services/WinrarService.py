@@ -27,9 +27,8 @@ class WinrarService:
             return False
 
     @staticmethod
-    def extractContent(rar_path: str, unrar_path: str, password: str, out_dir_name: str = "extraido") -> str:
-        """Extrae el RAR a una carpeta y devuelve la ruta destino."""
-        out_dir = os.path.join(os.path.dirname(rar_path), out_dir_name)
+    def extractContent(rar_path: str, unrar_path: str, password: str, out_dir: str) -> str:
+        """Extrae el RAR a la carpeta indicada y devuelve esa ruta."""
         os.makedirs(out_dir, exist_ok=True)
 
         result = subprocess.run(
