@@ -4,9 +4,8 @@ FelipedelosH
 """
 # src\Infrastructure\services\CRACKER\SequentialBruteForceService.py
 import os
-import itertools
 from src.Application.services.CRACKER.IBruteForceService import IBruteForceService
-from src.services.PasswordCombinationGenerator import PasswordCombinationGenerator
+from src.Infrastructure.services.PasswordCombinationGenerator import PasswordCombinationGenerator
 from src.Infrastructure.services.TermiteService import TermiteService
 from src.Infrastructure.services.WinrarService import WinrarService
 from src.Infrastructure.services.BeautifulPrinter import BeautifulPrinter
