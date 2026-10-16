@@ -4,13 +4,12 @@ FelipedelosH
 
 Centralized Dependency Injector.
 """
-
-# src/CORE/DependencyInjector.py
-
+# src\CORE\DependencyInjector.py
 import os
 from src.CORE.Config import Config
 from src.CORE.Logger import Logger
 from src.Infrastructure.services.CRACKER.SequentialBruteForceService import (SequentialBruteForceService)
+from src.Infrastructure.repositories.JsonWorkRepository import (JsonWorkRepository)
 
 
 class DependencyInjector:
@@ -26,6 +25,13 @@ class DependencyInjector:
 
         temp_path = os.path.join(path, "TEMP")
         output_path = os.path.join(path, "OUTPUT")
+
+        # WORK REPOSITORY
+        work_path = os.path.join(temp_path, "work.json")
+
+        work_repository = JsonWorkRepository(
+            work_path=work_path
+        )
 
         # CHARSET
         charset_path = os.path.join(path, "characters.txt")
@@ -58,6 +64,7 @@ class DependencyInjector:
         )
 
         return {
+            "work_repository": work_repository,
             "sequential_brute_force": sequential_brute_force,
             "logger": logger
         }
