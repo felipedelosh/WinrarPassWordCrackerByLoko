@@ -84,7 +84,14 @@ python -m pip install -r requirements.txt
 
 ## :play_or_pause_button:How to execute a project
 
-Double click
+```
+Double click mian.py
+```
+
+```
+C:\Users\docto\AppData\Local\Python\pythoncore-3.14-64\python.exe d:/PYTHON/WinrarPassWordCrackerByLoko/main.py
+```
+
 
 ## :hammer_and_wrench:Tech.
 
