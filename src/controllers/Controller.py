@@ -7,33 +7,61 @@ Controller: orquesta el ataque de fuerza bruta sobre un archivo RAR.
 import os
 import sys
 import time
-import string
 import itertools
+from datetime import datetime
 
+from src.controllers.ConfigController import Config
+from src.controllers.FolderController import FolderController
+from src.controllers.LoggerController import Logger
 from src.services.WinrarService import WinrarService
 
 
 class Controller:
-
     # ============ CONFIG ============
-    RAR_FILE = os.path.join("Docs", "rar_examples", "abc.rar")
-    UNRAR    = "UnRAR.exe"
-
-    # Charset a usar (personalízalo)
-    CHARSET = string.ascii_lowercase  # a-z
-    # CHARSET = string.ascii_lowercase + string.digits          # a-z 0-9
-    # CHARSET = string.ascii_letters + string.digits            # a-z A-Z 0-9
-    # CHARSET = string.ascii_letters + string.digits + "._-@:/" # + símbolos
+    RAR_FILE     = os.path.join("Docs", "rar_examples", "abc.rar")
+    UNRAR        = "UnRAR.exe"
+    CHARSET_FILE = "characters.txt"
 
     MIN_LEN = 1
     MAX_LEN = 4   # 👈 cuidado: cada carácter más multiplica el tiempo
     # ================================
 
     def __init__(self, path):
+        self.currentDate = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.config = Config()
+        self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
+        self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
         self.path = path
         self.rar_path = os.path.join(self.path, self.RAR_FILE)
         self.unrar_path = os.path.join(self.path, self.UNRAR)
+        self.charset = self.loadCharset()
+        
 
+    # ---------- Carga de charset ----------
+    def loadCharset(self) -> str:
+        """Lee characters.txt desde self.path y devuelve el charset limpio."""
+        charset_path = os.path.join(self.path, self.CHARSET_FILE)
+
+        if not os.path.exists(charset_path):
+            print(f"❌ No se encontró {self.CHARSET_FILE} en la carpeta del proyecto.")
+            sys.exit(1)
+
+        with open(charset_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Quitar separadores: comas, espacios, saltos de línea, tabs
+        charset = ''.join(c for c in content if c not in ', \n\r\t')
+
+        # Quitar duplicados preservando el orden
+        charset = ''.join(dict.fromkeys(charset))
+
+        if not charset:
+            print(f"❌ {self.CHARSET_FILE} está vacío o no contiene caracteres válidos.")
+            sys.exit(1)
+
+        return charset
+
+    # ---------- Orquestador ----------
     def bruteForce(self):
         # Validar rutas
         if not os.path.exists(self.rar_path):
@@ -44,9 +72,10 @@ class Controller:
             print("   Cópialo desde C:\\Program Files\\WinRAR\\UnRAR.exe")
             sys.exit(1)
 
-        total = self.countCombinations(self.CHARSET, self.MIN_LEN, self.MAX_LEN)
+        total = self.countCombinations(self.charset, self.MIN_LEN, self.MAX_LEN)
         print(f"🔍 Iniciando fuerza bruta")
-        print(f"   Charset: {self.CHARSET}")
+        print(f"   Charset cargado desde {self.CHARSET_FILE}")
+        print(f"   Caracteres: {self.charset}")
         print(f"   Longitud: {self.MIN_LEN} a {self.MAX_LEN}")
         print(f"   Combinaciones totales: {total:,}")
         print(f"   (Ctrl+C para detener)\n")
@@ -55,7 +84,7 @@ class Controller:
         count = 0
 
         try:
-            for password in self.bruteForceGenerator(self.CHARSET, self.MIN_LEN, self.MAX_LEN):
+            for password in self.bruteForceGenerator(self.charset, self.MIN_LEN, self.MAX_LEN):
                 count += 1
                 if count % 100 == 0 or count == 1:
                     elapsed = time.time() - start
