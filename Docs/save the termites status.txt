@@ -1,0 +1,662 @@
+Documento técnico: Sistema de persistencia y recuperación de trabajos (work.json)
+
+Proyecto: WinrarPassWordCrackerByLoko
+Fecha: 2026-10-16
+Naturaleza: Exclusivamente de diseño — sin implementación de código.
+
+---
+
+1. Diagnóstico actual
+
+1.1 Flujo de arranque
+
+main.py
+  └→ Config()                              # carga .env
+  └→ DependencyInjector.build_dependencies # construye servicios concretos
+  └→ Controller(path, config, dependencies)
+       └→ FolderController.createInitalFolders  # OUTPUT, TEMP, INPUT
+  └→ c.bruteForce()
+       └→ dependencies["sequential_brute_force"].execute()
+  └→ finally: c.saveLogs()                 # OUTPUT/logs_TIMESTAMP.log
+
+1.2 Flujo de ejecución (SequentialBruteForceService.execute)
+
+1. Valida que existen rar_path y unrar_path.
+2. Calcula el total de combinaciones (PasswordCombinationGenerator.countTotal).
+3. Itera for length in range(min_len, max_len + 1) llamando a _run_colony(length).
+4. Cada colonia:
+   - TermiteService.spawnColony → crea TEMP/TERMITES-L{length}/ con un .txt por combinación (0.txt, 1.txt, …).
+   - Itera sobre todos los archivos ordenados por índice.
+   - Para cada termita: lee la contraseña, prueba con WinrarService.tryPassword.
+   - Si acierta: la termita sobrevive (se mueve a OUTPUT/), se extrae el contenido, retorna True.
+   - Si falla: la termita muere (os.remove).
+5. KeyboardInterrupt → retorna False sin persistir nada.
+
+1.3 Hallazgos críticos relevantes para el diseño
+
+#: 1
+Archivo:línea: Controller.py:46
+Problema: logger.info(f"...TRY::{password}") registra la contraseña en texto plano
+Impacto en persistencia: Violación de RED FLAG de CLAUDE.md. work.json no debe repetir este patrón.
+────────────────────────────────────────
+#: 2
+Archivo:línea: SequentialBruteForceService.py:79
+Problema: tracker.update(extra_info=f"trying: {password}") muestra cada contraseña en consola
+Impacto en persistencia: Mismo riesgo de exposición.
+────────────────────────────────────────
+#: 3
+Archivo:línea: TermiteService.py:67-68, 77-78
+Problema: except: pass en kill y survive
+Impacto en persistencia: Enmascara fallos de I/O; dificulta garantizar consistencia entre filesystem y work.json.
+────────────────────────────────────────
+#: 4
+Archivo:línea: Config.py:37-38
+Problema: except: pass en loadConfig
+Impacto en persistencia: Si .env falla, la config llega vacía y silenciosamente.
+────────────────────────────────────────
+#: 5
+Archivo:línea: WinrarService.py:26-27
+Problema: except Exception: return False
+Impacto en persistencia: No distingue contraseña incorrecta de fallo de infraestructura (timeout, exe corrupto). Esto es crítico:
+marcar una termita como "probada" cuando en realidad hubo un error de infraestructura provocaría saltar contraseñas válidas al
+recuperar.
+
+Conclusión del diagnóstico: el estado de ejecución es completamente efímero. No existe ningún mecanismo de persistencia entre ejecuciones. Cada arranque regenera todas las colonias desde cero. La única señal de progreso intrarrun es la eliminación de archivos .txt en TEMP/, pero spawnColony usa os.makedirs(exist_ok=True) y reescribe todos los archivos, así que ni siquiera el filesystem ofrece recuperación confiable hoy.
+
+---
+
+2. Comparación arquitectónica
+
+Alternativa A — Filesystem como fuente de verdad
+
+Idea: Los archivos .txt restantes en TEMP/TERMITES-L{length}/ representan el progreso. work.json solo guarda identidad y estado de alto nivel. Al recuperar, se escanea TEMP/ para reconstruir qué falta.
+
+┌────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────┐
+│                        Ventajas                        │                             Desventajas                             │
+├────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+│ No requiere tracking de índices en JSON                │ TEMP/ es volátil: el SO o el usuario pueden limpiarlo               │
+├────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+│ Progreso naturalmente granular (1 archivo = 1 termita) │ spawnColony reescribe todo — habría que modificarlo para no         │
+│                                                        │ sobrescribir                                                        │
+├────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+│ El kill ya elimina archivos — reutiliza mecánica       │ No funciona para RandomBruteForceService (no hay orden natural)     │
+│ existente                                              │                                                                     │
+├────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+│                                                        │ Dos fuentes de verdad (filesystem + JSON) pueden entrar en          │
+│                                                        │ conflicto                                                           │
+├────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+│                                                        │ Recuperar requiere escanear directorios potencialmente enormes      │
+└────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+
+Alternativa B — work.json como fuente de verdad (índice-basado)
+
+Idea: work.json tracking por índice: qué colonias están completadas, en cuál se está trabajando y hasta qué índice. TEMP/ es desechable y se regenera. Escritura atómica + flush periódico.
+
+┌──────────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────┐
+│                           Ventajas                           │                          Desventajas                          │
+├──────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Portable y robusto — sobrevive a limpieza de TEMP/           │ Requiere gestionar frecuencia de flush                        │
+├──────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Independiente de la estrategia — mismo repositorio para      │ Pequeña redundancia al recuperar (re-probar ~N termitas desde │
+│ Sequential y Random                                          │  el último flush)                                             │
+├──────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Escritura atómica garantiza JSON válido siempre              │                                                               │
+├──────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ TEMP/ sigue siendo desechable, coherente con su propósito    │                                                               │
+├──────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────────────┤
+│ Escalable: el bloque progress es polimórfico por estrategia  │                                                               │
+└──────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘
+
+Alternativa C — Híbrido (JSON primario + filesystem secundario)
+
+Idea: work.json tracking por índice (como B), pero al recuperar se valida contra el estado de TEMP/. Si hay termitas restantes, se usan; si no, se regeneran y se usa el índice del JSON.
+
+┌─────────────────────────────────────────────────────────┬────────────────────────────────────────────────────────────────────┐
+│                        Ventajas                         │                            Desventajas                             │
+├─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ Tolerante a escenarios mixtos (TEMP parcialmente        │ Mayor complejidad — dos fuentes de verdad con lógica de            │
+│ limpiado)                                               │ reconciliación                                                     │
+├─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│ Puede detectar manipulación externa                     │ Lógica de "cuál fuente gana" añade ramificaciones                  │
+├─────────────────────────────────────────────────────────┼────────────────────────────────────────────────────────────────────┤
+│                                                         │ Overkill para el estado actual del proyecto                        │
+└─────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
+
+Resumen comparativo
+
+┌───────────────────────────────┬─────────┬──────────┬─────────────┐
+│           Criterio            │ A (FS)  │ B (JSON) │ C (Híbrido) │
+├───────────────────────────────┼─────────┼──────────┼─────────────┤
+│ Fiabilidad de recuperación    │ Baja    │ Alta     │ Alta        │
+├───────────────────────────────┼─────────┼──────────┼─────────────┤
+│ Complejidad de implementación │ Media   │ Baja     │ Alta        │
+├───────────────────────────────┼─────────┼──────────┼─────────────┤
+│ Compatibilidad con RANDOM     │ No      │ Sí       │ Sí          │
+├───────────────────────────────┼─────────┼──────────┼─────────────┤
+│ Cambios a código existente    │ Mayores │ Menores  │ Mayores     │
+├───────────────────────────────┼─────────┼──────────┼─────────────┤
+│ Tolerancia a TEMP limpiado    │ No      │ Sí       │ Sí          │
+└───────────────────────────────┴─────────┴──────────┴─────────────┘
+
+---
+
+3. Arquitectura recomendada
+
+Se recomienda la Alternativa B (work.json como fuente de verdad, índice-basado).
+
+3.1 Nuevos componentes
+
+src/
+  Application/services/WORK/
+    IWorkRepository.py              # Contrato: load, save, exists, archive
+  Infrastructure/services/WORK/
+    JsonWorkRepository.py           # Implementación: lee/escribe work.json atómicamente
+  Models/
+    WorkState.py                    # DTO/entidad del estado del trabajo
+    Enums/
+      WorkStatus.py                 # NEW, RUNNING, PAUSED, COMPLETED, FOUND, FAILED
+
+3.2 Responsabilidades
+
+┌─────────────────────────────┬────────────────────────────────────────────────────────────┬────────────────────────────────────┐
+│         Componente          │                      Responsabilidad                       │                Capa                │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ IWorkRepository             │ Contrato de persistencia: load(), save(state), exists(),   │ Application                        │
+│                             │ archive()                                                  │                                    │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ JsonWorkRepository          │ Lee/escribe work.json con escritura atómica (temp +        │ Infrastructure                     │
+│                             │ os.replace)                                                │                                    │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ WorkState                   │ Contenedor inmutable del estado: identidad, progreso,      │ Models                             │
+│                             │ metadatos                                                  │                                    │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ WorkStatus                  │ Enumeración de estados del trabajo                         │ Models                             │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ SequentialBruteForceService │ Reporta progreso al repositorio; reanuda desde WorkState   │ Infrastructure (existente,         │
+│                             │ si existe                                                  │ modificado)                        │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ DependencyInjector          │ Construye JsonWorkRepository y lo inyecta al servicio      │ CORE (existente, modificado)       │
+├─────────────────────────────┼────────────────────────────────────────────────────────────┼────────────────────────────────────┤
+│ Controller                  │ Sin cambios de lógica — sigue delegando a execute()        │ controllers (existente)            │
+└─────────────────────────────┴────────────────────────────────────────────────────────────┴────────────────────────────────────┘
+
+3.3 Principio clave
+
+El IWorkRepository se inyecta en SequentialBruteForceService vía constructor. Dentro de execute(), el servicio:
+
+1. Carga el WorkState existente (si hay).
+2. Valida la identidad (hash del RAR, charset, rangos, estrategia).
+3. Decide: reanudar (si coincide y está en RUNNING/PAUSED), archivar y crear nuevo (si no coincide), o reportar completado (si COMPLETED/FOUND).
+4. Ejecuta, actualizando y guardando el WorkState periódicamente.
+
+El contrato execute() -> None se preserva. El Controller no cambia su lógica de delegación.
+
+---
+
+4. Diseño de work.json
+
+4.1 Esquema completo propuesto
+
+{
+  "version": 1,
+
+  "identity": {
+    "rar_file": "INPUT/123.rar",
+    "rar_sha256": "a1b2c3d4e5f6...",
+    "rar_size_bytes": 2048,
+    "charset": "0123456789",
+    "min_len": 2,
+    "max_len": 4,
+    "attack_mode": "SEQUENTIAL"
+  },
+
+  "state": "RUNNING",
+  "password_found": false,
+
+  "progress": {
+    "strategy": "SEQUENTIAL",
+    "completed_colonies": [2, 3],
+    "current_colony": 4,
+    "current_colony_index": 523,
+    "total_combinations_tried": 110
+  },
+
+  "metadata": {
+    "total_colonies": 3,
+    "total_combinations": 11110,
+    "created_at": "2026-10-16T10:00:00",
+    "updated_at": "2026-10-16T10:05:23",
+    "completed_at": null,
+    "flush_interval": 100
+  }
+}
+
+4.2 Justificación propiedad por propiedad
+
+┌───────────────────────────────────┬────────────┬─────────────────────┬───────────────────────────────────────────────────────┐
+│             Propiedad             │    Tipo    │   Se guarda o se    │                     Justificación                     │
+│                                   │            │      recalcula      │                                                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ version                           │ int        │ Guarda              │ Versionado del esquema para migraciones futuras.      │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.rar_file                 │ str        │ Guarda              │ Ruta relativa del RAR. Para display y validación      │
+│                                   │            │                     │ básica.                                               │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.rar_sha256               │ str        │ Guarda (calculado   │ Hash del contenido del RAR. Garantiza que es el mismo │
+│                                   │            │ al inicio)          │  archivo, no solo la misma ruta.                      │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.rar_size_bytes           │ int        │ Guarda              │ Tamaño del archivo. Validación rápida antes de        │
+│                                   │            │                     │ computar hash.                                        │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.charset                  │ str        │ Guarda              │ Charset limpio (sin comas/espacios, deduplicado). Es  │
+│                                   │            │                     │ lo que se compara para identidad.                     │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.min_len                  │ int        │ Guarda              │ Rango mínimo de longitud. Parte de la identidad del   │
+│                                   │            │                     │ trabajo.                                              │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.max_len                  │ int        │ Guarda              │ Rango máximo de longitud.                             │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ identity.attack_mode              │ str        │ Guarda              │ Estrategia usada. Un trabajo SEQUENTIAL no es         │
+│                                   │            │                     │ reanudable por RANDOM.                                │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ state                             │ str (enum) │ Guarda              │ Estado del ciclo de vida: NEW, RUNNING, PAUSED,       │
+│                                   │            │                     │ COMPLETED, FOUND, FAILED.                             │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ password_found                    │ bool       │ Guarda              │ Si la contraseña fue encontrada. No se guarda la      │
+│                                   │            │                     │ contraseña en sí (RED FLAG de CLAUDE.md).             │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ progress.strategy                 │ str        │ Guarda              │ Estrategia específica del bloque de progreso. Permite │
+│                                   │            │                     │  que el bloque sea polimórfico.                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│                                   │            │                     │ Longitudes de colonias ya procesadas sin éxito.       │
+│ progress.completed_colonies       │ list[int]  │ Guarda              │ Crítico: sin esto, solo guardar la colonia actual no  │
+│                                   │            │                     │ basta (las colonias anteriores se repetirían).        │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ progress.current_colony           │ int|null   │ Guarda              │ Longitud de la colonia en proceso. null si no hay     │
+│                                   │            │                     │ ninguna activa.                                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│                                   │            │                     │ Índice de la última termita confirmada como probada   │
+│ progress.current_colony_index     │ int        │ Guarda              │ en la colonia actual. Al reanudar, se continúa desde  │
+│                                   │            │                     │ index + 1.                                            │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ progress.total_combinations_tried │ int        │ Guarda (acumulado)  │ Total acumulado de combinaciones probadas. Útil para  │
+│                                   │            │                     │ estadísticas y progreso global.                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│                                   │            │ Recalculable        │                                                       │
+│ metadata.total_colonies           │ int        │ (max_len - min_len  │ Se incluye por convenidad pero es derivado.           │
+│                                   │            │ + 1)                │                                                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ metadata.total_combinations       │ int        │ Recalculable        │ Se incluye por convenidad.                            │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ metadata.created_at               │ str (ISO   │ Guarda              │ Timestamp de creación del trabajo.                    │
+│                                   │ 8601)      │                     │                                                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ metadata.updated_at               │ str (ISO   │ Guarda              │ Última escritura. Para detectar trabajos stale.       │
+│                                   │ 8601)      │                     │                                                       │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ metadata.completed_at             │ str|null   │ Guarda              │ Cuándo terminó (éxito o agotamiento). null mientras   │
+│                                   │            │                     │ corre.                                                │
+├───────────────────────────────────┼────────────┼─────────────────────┼───────────────────────────────────────────────────────┤
+│ metadata.flush_interval           │ int        │ Guarda              │ Cada cuántas termitas se hace flush. Informativo;     │
+│                                   │            │                     │ permite auditar la granularidad de recuperación.      │
+└───────────────────────────────────┴────────────┴─────────────────────┴───────────────────────────────────────────────────────┘
+
+4.3 Propiedades que NO se guardan y por qué
+
+┌─────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
+│          Propiedad          │                                             Razón                                              │
+├─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ La contraseña encontrada    │ RED FLAG: CLAUDE.md prohíbe exponer contraseñas. Con password_found: true + estado FOUND       │
+│                             │ basta. La extracción en OUTPUT/ es la prueba.                                                  │
+├─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ El contenido completo de    │ Es derivable: itertools.product(charset, repeat=length) genera el password por índice.         │
+│ cada termita                │ Guardarlo sería redundante y enorme.                                                           │
+├─────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ El listado de archivos en   │ TEMP/ es desechable. Se regenera.                                                              │
+│ TEMP/                       │                                                                                                │
+└─────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+4.4 Sobre la propuesta inicial del usuario
+
+La propuesta inicial del usuario:
+{
+  "characters": "0,1,2,3,4,5,6,7,8,9",
+  "GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK": 2,
+  "GEN_CONFIG_LEN_MAX_SIZE_CHAR_SELECT_TO_CRACK": 4,
+  "TOTAL_COLONIES": null,
+  "CRACK_PASSWORD": false
+}
+
+Diferencias y mejoras propuestas:
+
+┌───────────────────┬───────────────────────────────┬──────────────────────────────────────────────────────────────────────────┐
+│ Propuesta usuario │        Propuesta final        │                                  Razón                                   │
+├───────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+│ characters:       │ identity.charset:             │ Se debe guardar el charset limpio (post-procesamiento en                 │
+│ "0,1,2,..."       │ "0123456789"                  │ DependencyInjector), no el contenido crudo de characters.txt. La         │
+│                   │                               │ comparación de identidad debe usar el valor real usado.                  │
+├───────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+│ TOTAL_COLONIES:   │ metadata.total_colonies: 3    │ Es derivable (max_len - min_len + 1). Se llena desde el inicio, no se    │
+│ null              │                               │ deja en null.                                                            │
+├───────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+│ CRACK_PASSWORD:   │ state: "RUNNING" +            │ Un booleano no modela el ciclo de vida completo (NEW, PAUSED, COMPLETED, │
+│ false             │ password_found: false         │  FOUND, FAILED). Se separa "estado del trabajo" de "resultado".          │
+├───────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+│ Sin identidad del │ identity.rar_sha256 +         │ Sin esto, no se puede distinguir si el .rar fue reemplazado entre        │
+│  RAR              │ rar_size_bytes                │ ejecuciones.                                                             │
+├───────────────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────────────┤
+│ Sin progreso      │ progress.*                    │ Sin tracking de colonias completadas e índice actual, no hay punto de    │
+│                   │                               │ recuperación.                                                            │
+└───────────────────┴───────────────────────────────┴──────────────────────────────────────────────────────────────────────────┘
+
+---
+
+5. Ciclo de vida del trabajo
+
+5.1 Máquina de estados
+
+                  ┌──────────────────────────────────────────────┐
+                  │                                              │
+                  ▼                                              │
+  ┌─────┐   start   ┌─────────┐  interrupt   ┌────────┐  resume   │
+  │ NEW │ ────────→ │ RUNNING │ ──────────→ │ PAUSED │ ────────┘
+  └─────┘           └─────────┘             └────────┘
+     │                   │                       │
+     │                   │ found                 │ error
+     │                   ▼                       ▼
+     │              ┌───────┐              ┌───────┐
+     │              │ FOUND │              │ FAILED│
+     │              └───────┘              └───────┘
+     │                   │                       │
+     │                   │ (terminal)            │ (terminal)
+     │                   │                       │
+     │  exhausted        │                       │
+     └──────────────→ ┌───────────┐             │
+                       │ COMPLETED │             │
+                       └───────────┘             │
+                        (terminal)               │
+                                                 │
+                            (FAILED puede reintentar → NEW)
+
+5.2 Transiciones
+
+┌───────────────┬───────────┬───────────────────────────────┬──────────────────────────────────────────────────────────────────┐
+│     Desde     │   Hasta   │          Disparador           │                      Acción sobre work.json                      │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ (inexistente) │ NEW       │ Primera ejecución             │ Crear work.json con identidad calculada                          │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ NEW           │ RUNNING   │ Inicio de execute()           │ save(state=RUNNING)                                              │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ RUNNING       │ RUNNING   │ Flush periódico (cada N       │ save(current_colony_index += N)                                  │
+│               │           │ termitas)                     │                                                                  │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ RUNNING       │ PAUSED    │ KeyboardInterrupt o fin de    │ save(state=PAUSED) (si hubo tiempo; si no, el último flush queda │
+│               │           │ proceso                       │  como RUNNING y se trata como reanudable)                        │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ PAUSED        │ RUNNING   │ Reanudación validada          │ save(state=RUNNING)                                              │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ RUNNING       │ FOUND     │ Contraseña encontrada         │ save(state=FOUND, password_found=true, completed_at=now)         │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ RUNNING       │ COMPLETED │ Todas las colonias agotadas   │ save(state=COMPLETED, completed_at=now)                          │
+│               │           │ sin éxito                     │                                                                  │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ RUNNING       │ FAILED    │ Error de infraestructura      │ save(state=FAILED, completed_at=now)                             │
+│               │           │ irrecuperable                 │                                                                  │
+├───────────────┼───────────┼───────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+│ FAILED        │ NEW       │ Reintento del usuario         │ Archivar work.json, crear nuevo                                  │
+│               │           │ (decisión explícita)          │                                                                  │
+└───────────────┴───────────┴───────────────────────────────┴──────────────────────────────────────────────────────────────────┘
+
+5.3 Nota sobre RUNNING vs PAUSED
+
+Si el proceso muere abruptamente (kill, corte de energía), no habrá oportunidad de escribir PAUSED. El último flush habrá dejado state: "RUNNING". Al recuperar, se trata cualquier trabajo en RUNNING como reanudable (equivalente a PAUSED). La distinción entre RUNNING y PAUSED es informativa, no determina la lógica de recuperación.
+
+---
+
+6. Escenarios de recuperación
+
+6.1 Primera ejecución
+
+- work.json no existe.
+- JsonWorkRepository.load() retorna None.
+- Se calcula la identidad (hash del RAR, charset, rangos).
+- Se crea WorkState(state=NEW), se guarda.
+- Se transita a RUNNING y se ejecuta normalmente.
+
+6.2 Reinicio (reanudación exitosa)
+
+- work.json existe, JSON válido.
+- Se carga WorkState.
+- Se recalcula la identidad actual y se compara con la almacenada.
+- Coinciden (mismo hash, charset, rangos, estrategia).
+- state es RUNNING o PAUSED.
+- Se reanuda: saltar completed_colonies, en current_colony saltar termitas 0..current_colony_index, continuar desde current_colony_index + 1.
+- Se transita a RUNNING.
+
+6.3 Interrupción abrupta (kill / corte de energía)
+
+- El último flush dejó work.json con state: "RUNNING" y current_colony_index: N.
+- Al reiniciar, se carga el estado. Se reanuda desde N + 1.
+- Trabajo redundante: las termitas entre el último flush y la interrupción real se re-probarán. Esto es seguro (no causa saltos de contraseñas válidas), solo ligeramente ineficiente. El máximo redundancia es flush_interval termitas.
+- Caso especial — interrupción durante escritura de work.json: la escritura atómica (escribir a work.tmp.json + os.replace) garantiza que work.json siempre tiene el último estado válido completo. Si el proceso muere durante la escritura del temporal, work.json queda intacto con el estado anterior.
+
+6.4 Trabajo completado (COMPLETED o FOUND)
+
+- work.json existe con estado terminal.
+- Se reporta al usuario: "El trabajo anterior ya finalizó (contraseña encontrada / no encontrada)".
+- Decisión del usuario: archivar y empezar uno nuevo, o simplemente salir.
+- No se re-ejecuta automáticamente.
+
+6.5 Configuración modificada
+
+- work.json existe, pero la identidad no coincide (ej: cambió el RAR, el charset, o los rangos).
+- Se archiva el trabajo anterior: work.json → work.archived.{timestamp}.json.
+- Se crea un nuevo trabajo desde cero.
+- Se loguea: WARN: WorkService::previous_work_archived::identity_mismatch.
+
+Subcasos:
+
+┌───────────────────────────┬───────────────────────┬─────────────────────────────────────────────────────────────────────────┐
+│          Cambio           │       Detección       │                                 Acción                                  │
+├───────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ RAR reemplazado           │ rar_sha256 difiere    │ Archivar, nuevo trabajo                                                 │
+├───────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ characters.txt modificado │ charset difiere       │ Archivar, nuevo trabajo                                                 │
+├───────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ min_len/max_len cambiados │ Difieren en identidad │ Archivar, nuevo trabajo                                                 │
+├───────────────────────────┼───────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+│ attack_mode cambiado      │ Difiere en identidad  │ Archivar, nuevo trabajo (progreso no es transferible entre estrategias) │
+└───────────────────────────┴───────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+6.6 JSON corrupto
+
+- JsonWorkRepository.load() falla al deserializar (json.JSONDecodeError).
+- Se hace backup: work.json → work.corrupt.{timestamp}.json.
+- Se loguea: ERROR: WorkService::corrupt_work_file::backed_up.
+- Se notifica al usuario y se inicia un trabajo nuevo desde cero.
+- No se aborta la ejecución — se degrada graciosamente.
+
+---
+
+7. Integración con DependencyInjector
+
+7.1 Dependencias nuevas a construir
+
+DependencyInjector.build_dependencies()
+  ...
+  # WORK REPOSITORY (nuevo)
+  work_path = os.path.join(path, "work.json")
+  work_repository = JsonWorkRepository(
+      work_path=work_path,
+      logger=logger
+  )
+
+  # SEQUENTIAL SERVICE (modificado: recibe work_repository)
+  sequential_brute_force = SequentialBruteForceService(
+      rar_path=rar_path,
+      unrar_path=unrar_path,
+      charset=charset,
+      min_len=min_len,
+      max_len=max_len,
+      temp_path=temp_path,
+      output_path=output_path,
+      logger=logger,
+      work_repository=work_repository       # ← nuevo parámetro
+  )
+
+  return {
+      "sequential_brute_force": sequential_brute_force,
+      "logger": logger,
+      "work_repository": work_repository    # ← nueva clave
+  }
+
+7.2 Componentes actuales y su grado de cambio
+
+┌─────────────────────────────────────────┬─────────────────────────────────────────────────────┬──────────────────────────────┐
+│               Componente                │                       Cambio                        │          Naturaleza          │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ DependencyInjector                      │ Construir JsonWorkRepository, pasarlo al servicio,  │ Pequeño — añadir             │
+│                                         │ agregar clave al dict                               │ construcción                 │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ SequentialBruteForceService.__init__    │ Aceptar work_repository opcional                    │ Pequeño — nuevo parámetro    │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ SequentialBruteForceService.execute     │ Cargar/crear WorkState, validar identidad, reanudar │ Medio — lógica de            │
+│                                         │  si aplica, flush periódico                         │ orquestación del trabajo     │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ SequentialBruteForceService._run_colony │ Aceptar start_index, saltar termitas ya probadas,   │ Medio — parámetro + loop     │
+│                                         │ reportar progreso                                   │ modificado                   │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ Controller                              │ Sin cambios — sigue llamando execute()              │ Ninguno                      │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ main.py                                 │ Sin cambios                                         │ Ninguno                      │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ IBruteForceService                      │ Sin cambios — execute() se preserva                 │ Ninguno                      │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ TermiteService                          │ Sin cambios                                         │ Ninguno                      │
+├─────────────────────────────────────────┼─────────────────────────────────────────────────────┼──────────────────────────────┤
+│ Config                                  │ Sin cambios                                         │ Ninguno                      │
+└─────────────────────────────────────────┴─────────────────────────────────────────────────────┴──────────────────────────────┘
+
+7.3 Contrato IWorkRepository
+
+IWorkRepository (ABC):
+    @abstractmethod
+    def load() -> WorkState | None       # Retorna None si no existe
+
+    @abstractmethod
+    def save(state: WorkState) -> None   # Escritura atómica
+
+    @abstractmethod
+    def exists() -> bool
+
+    @abstractmethod
+    def archive() -> str | None          # Renombra work.json → work.archived.{ts}.json, retorna nueva ruta
+
+7.4 Inyección y Attack enum
+
+El attack_mode ya se lee de .env y existe Attack.SEQUENTIAL / Attack.RANDOM. La identidad del trabajo incluye attack_mode, así que un trabajo SEQUENTIAL no se confunde con uno RANDOM. Cuando se implemente RandomBruteForceService, este también recibirá IWorkRepository y manejará su propio bloque progress (polimórfico).
+
+---
+
+8. Plan de implementación
+
+▎ Nota: Esto es un plan de fases para tu revisión. No se ejecuta ninguna fase sin aprobación explícita.
+
+Fase 0 — Fundaciones (sin tocar lógica existente)
+
+1. Crear src/Models/Enums/WorkStatus.py con el enum WorkStatus.
+2. Crear src/Models/WorkState.py con el DTO WorkState (campos del esquema, validación de tipos).
+3. Crear src/Application/services/WORK/IWorkRepository.py con el contrato ABC.
+4. No se modifica ningún archivo existente.
+5. Verificar: sintaxis, imports, sin side-effects.
+
+Fase 1 — Implementación del repositorio
+
+1. Crear src/Infrastructure/services/WORK/JsonWorkRepository.py.
+2. Implementar load (deserialización + validación de version).
+3. Implementar save (escritura atómica: work.tmp.json → os.replace).
+4. Implementar exists y archive.
+5. Tests unitarios con filesystem mockeado: guardar/cargar round-trip, escritura atómica, JSON corrupto.
+6. No se modifica ningún archivo existente.
+
+Fase 2 — Wiring en DependencyInjector
+
+1. Modificar DependencyInjector.build_dependencies para construir JsonWorkRepository.
+2. Pasar work_repository al constructor de SequentialBruteForceService.
+3. Agregar "work_repository" al diccionario de dependencias.
+4. SequentialBruteForceService.__init__ acepta el parámetro pero aún no lo usa.
+5. Verificar: la app arranca y se comporta exactamente igual que antes.
+
+Fase 3 — Lógica de identidad y decisión de reanudación
+
+1. Implementar cálculo de hash SHA-256 del RAR (método helper en el servicio o en un WorkIdentity).
+2. En execute(), cargar WorkState existente, comparar identidad.
+3. Si coincide y es reanudable: preparar punto de recuperación.
+4. Si no coincide: archivar, crear nuevo.
+5. Si no existe: crear nuevo.
+6. Guardar WorkState(state=NEW) antes de empezar, transitar a RUNNING.
+7. El progreso aún no se reporta — solo se crea/carga el trabajo.
+
+Fase 4 — Reporte de progreso y reanudación
+
+1. En _run_colony, aceptar start_index y saltar las primeras termitas.
+2. Después de cada termita (o cada N), actualizar current_colony_index y save.
+3. Al completar una colonia, marcarla en completed_colonies y save.
+4. Al encontrar contraseña: save(state=FOUND, password_found=true).
+5. Al agotar todo: save(state=COMPLETED).
+6. En KeyboardInterrupt: save(state=PAUSED) antes de retornar.
+
+Fase 5 — Robustez y edge cases
+
+1. Manejo de JSON corrupto (backup + nuevo trabajo).
+2. Manejo de FAILED (error de infraestructura distinto de contraseña incorrecta — requiere abordar el hallazgo #5 del diagnóstico: WinrarService.tryPassword actualmente no distingue fallos).
+3. Validación de version del esquema (migración futura).
+4. .gitignore: añadir work.json y work.*.json.
+
+Fase 6 — Futuro: RandomBruteForceService
+
+1. Mismo IWorkRepository, bloque progress polimórfico.
+2. El progreso de RANDOM guarda el conjunto de índices probados (o seed + contador, según diseño).
+3. No requiere cambios al repositorio — solo al bloque progress y su interpretación.
+
+---
+
+9. Recomendación final
+
+Alternativa seleccionada: B — work.json como fuente de verdad (índice-basado)
+
+Justificación
+
+1. Fiabilidad: TEMP/ es volátil por diseño (es una carpeta temporal). Confiar en ella como fuente de verdad (Alternativa A) es frágil. Un work.json atómico en la raíz del proyecto sobrevive a cualquier escenario de interrupción.
+2. Compatibilidad de contratos: La Alternativa B requiere los cambios mínimos al código existente. El contrato execute() -> None se preserva. Controller no cambia. IBruteForceService no cambia. Solo SequentialBruteForceService y DependencyInjector se modifican, y de forma aditiva.
+3. Escalabilidad: El bloque progress es polimórfico por estrategia. Cuando se implemente RandomBruteForceService, reutiliza el mismo IWorkRepository y JsonWorkRepository. Solo cambia el contenido de progress. Las Alternativas A y C acoplan el progreso al filesystem, que no tiene orden natural para RANDOM.
+4. Granularidad de recuperación controlable: El flush_interval permite balancear overhead de I/O vs. redundancia al recuperar. Para este proyecto educativo (charsets pequeños, combinaciones moderadas), un flush cada 100 termitas es negligible en performance y limita la redundancia a 100 re-intentos en el peor caso.
+5. Consistencia garantizada: La escritura atómica (temp + os.replace) elimina la clase entera de "JSON parcialmente escrito". Es el patrón estándar y suficiente para este caso — no se justifica introducir una base de datos o WAL.
+6. Seguridad: work.json no almacena la contraseña. Solo password_found: bool. Cumple con la RED FLAG de CLAUDE.md.
+7. Simplicidad: La Alternativa C (híbrido) duplica la complejidad de reconciliación sin beneficio tangible en el estado actual del proyecto. Se puede evolucionar de B a C si el futuro lo requiere, pero YAGNI aplica hoy.
+
+Advertencias que deben abordarse antes o durante la implementación
+
+┌───────────┬──────────────────────────────────────────────────────────────────────────────┬───────────────────────────────────┐
+│ Prioridad │                                   Hallazgo                                   │        Acción recomendada         │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│           │ WinrarService.tryPassword no distingue "contraseña incorrecta" de "fallo de  │ Modificar tryPassword para        │
+│ Alta      │ infraestructura" (hallazgo #5). Sin resolver esto, el progreso podría marcar │ retornar un resultado con tres    │
+│           │  termitas como probadas cuando en realidad hubo un timeout, y al recuperar   │ estados (correcta / incorrecta /  │
+│           │ se saltarían contraseñas válidas.                                            │ error) antes de la Fase 4.        │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ Media     │ Controller.extractAndPrint:46 registra la contraseña en logs (hallazgo #1).  │ Corregir antes de que work.json   │
+│           │                                                                              │ herede el patrón.                 │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│ Media     │ TermiteService.kill/survive tragan excepciones (hallazgo #3).                │ Distinguir fallos de I/O para no  │
+│           │                                                                              │ marcar progreso incorrecto.       │
+├───────────┼──────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────┤
+│           │                                                                              │ Validar config al arranque para   │
+│ Baja      │ Config.loadConfig traga todas las excepciones (hallazgo #4).                 │ que un .env malformado no         │
+│           │                                                                              │ produzca un WorkState con         │
+│           │                                                                              │ identidad vacía.                  │
+└───────────┴──────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────┘
+
+---
+
+Este documento es exclusivamente de diseño. No se ha escrito ni modificado ningún archivo. Quedo a la espera de tu revisión y aprobación antes de autorizar cualquier cambio de código.
