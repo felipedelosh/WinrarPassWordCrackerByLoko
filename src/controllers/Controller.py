@@ -16,10 +16,14 @@ from src.controllers.LoggerController import Logger
 from src.services.PasswordCombinationGenerator import PasswordCombinationGenerator
 from src.services.BeautifulPrinter import BeautifulPrinter
 from src.services.WinrarService import WinrarService
+from src.services.TermiteService import TermiteService
 
 
 class Controller:
-    UNRAR        = "UnRAR.exe"
+    """
+    This script needs you install winrar: https://winrar.es/descargas
+    """
+    UNRAR = "UnRAR.exe" # INSTALL :)
     def __init__(self, path):
         self.path = path
         self.output_path = os.path.join(self.path, "OUTPUT")
@@ -81,14 +85,15 @@ class Controller:
         print("\n=========TERMITES INIT=========")
         print(f"PRESS: (Ctrl+C) TO STOP\n")
 
+        temp_path = os.path.join(self.path, "TEMP")
         try:
-            for length, total_by_length, generator in PasswordCombinationGenerator.generateByLength(
-                self.charset, self.MIN_LEN, self.MAX_LEN
-            ):
-                self.logger.info(
-                    f"Controller::bruteForce::CHUNK_START::LEN::{length}::TOTAL::{total_by_length:,}"
-                )
-                print(f"\n>>> ATTACKING LENGTH {length}  ({total_by_length:,} combinations)")
+            for length in range(self.MIN_LEN, self.MAX_LEN + 1):
+                self.logger.info(f"Controller::bruteForce::SPAWN_COLONY::LEN::{length}")
+                print(f"\n>>> SPAWNING COLONY :: LENGTH {length}")
+
+                colony_path = TermiteService.spawnColony(temp_path, self.charset, length, self.logger)
+                files = TermiteService.listColony(colony_path)
+                total_by_length = len(files)
 
                 tracker = BeautifulPrinter(
                     label=f"TERMITES-L{length}",
@@ -103,37 +108,28 @@ class Controller:
                 )
                 tracker.start()
 
-                found = False
-                found_password = None
+                for filename in files:
+                    file_path = os.path.join(colony_path, filename)
+                    password = TermiteService.readTermite(file_path)
 
-                for password in generator:
                     tracker.update(extra_info=f"trying: {password}")
 
                     if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
-                        found = True
-                        found_password = password
-                        break
+                        TermiteService.survive(file_path, self.output_path)
+                        elapsed = tracker.elapsed
+                        tracker.newline()
+                        self.logger.info(
+                            f"Controller::bruteForce::TERMITE_WINNER::{filename}::"
+                            f"PASSWORD::{password}::TIME::{elapsed:.1f}s"
+                        )
+                        print(f"\n\n🎉 ¡PASSWORD!: '{password}'")
+                        self.extractAndPrint(password)
+                        return
 
-                elapsed = tracker.elapsed
+                    TermiteService.kill(file_path)
+
                 tracker.newline()
-
-                self.logger.info(
-                    f"Controller::bruteForce::CHUNK_END::LEN::{length}::"
-                    f"FOUND::{found}::TIME::{elapsed:.1f}s"
-                )
-
-                if found:
-                    self.logger.info(
-                        f"Controller::bruteForce::CRACK::LEN::{length}::"
-                        f"OPERATIONS::{tracker.current}::TOTAL_TIME_SECONDS::{elapsed:.1f}"
-                    )
-                    self.logger.info(
-                        f"Controller::bruteForce::OK::FILE::{self.RAR_FILE}::PASSWORD::{found_password}"
-                    )
-                    print(f"\n\n🎉 ¡PASSWORD!: '{found_password}'")
-                    self.extractAndPrint(found_password)
-                    return
-
+                self.logger.info(f"Controller::bruteForce::COLONY_DEAD::LEN::{length}")
         except KeyboardInterrupt:
             self.logger.warn("Controller::bruteForce::STOP_PROCESS_BY_USER")
             return
