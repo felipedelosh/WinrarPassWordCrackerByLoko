@@ -13,11 +13,21 @@ That means it generates many possible passwords and tests them one by one.
 
 ## :hammer:Funtions:
 
-- `Function 1`: Neque porro quisquam est qui dolorem ipsum quia dolor sit amet.<br>
-- `Function 2`: Neque porro quisquam est qui dolorem ipsum quia dolor sit amet.<br>
-- `Function 3`: Neque porro quisquam est qui dolorem ipsum quia dolor sit amet.<br>
-- `Function 3a`: Neque porro quisquam est qui dolorem ipsum quia dolor sit amet.<br>
-- `Function 4`: Neque porro quisquam est qui dolorem ipsum quia dolor sit amet.<br>
+
+- `Function 1`: **Sequential Brute Force Attack** - Generates and tests password combinations sequentially to recover passwords from RAR archives.<br>
+- `Function 2`: **Termite Colony System** - Creates termite colonies represented by `.txt` files, each containing a password candidate.<br>
+- `Function 3`: **Termite Lifecycle Management** - Generates, reads, removes, and preserves termite files based on password validation results.<br>
+- `Function 4`: **Custom Character Set** - Loads password characters from `characters.txt`, removing separators and duplicates.<br>
+- `Function 5`: **Configurable Password Length** - Supports minimum and maximum password lengths through `.env` configuration.<br>
+- `Function 6`: **RAR Password Validation** - Uses `UnRAR.exe` to test generated passwords against protected RAR archives.<br>
+- `Function 7`: **Automatic File Extraction** - Extracts archive contents to the output directory when a valid password is found.<br>
+- `Function 8`: **Real-Time Progress Tracking** - Displays tested combinations, execution time, and processing speed in the console.<br>
+- `Function 9`: **Execution Logging** - Records application events, errors, and results in log files.<br>
+- `Function 10`: **Attack Strategy Configuration** - Provides configuration for sequential and random attack modes. Currently, only sequential mode is implemented.<br>
+- `Function 11`: **Dependency Injection** - Uses a centralized dependency injector to initialize and connect application services.<br>
+- `Function 12`: **Hexagonal Architecture** - Separates application contracts from infrastructure implementations to improve maintainability and extensibility.<br>
+- `Function 13`: **Graceful Interruption** - Allows users to stop execution using `Ctrl+C`.<br>
+
 
 ## Architecture
 
