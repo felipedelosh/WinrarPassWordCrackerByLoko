@@ -19,24 +19,22 @@ Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i
 ## Architecture
 
 ```
-proyecto/
+WinrarPassWordCrackerByLoko/
 ├── main.py
+├── characters.txt
 ├── UnRAR.exe
 ├── Docs/
+│   ├── banner.png
 │   └── rar_examples/
 │       └── abc.rar
 └── src/
     ├── __init__.py
     ├── controllers/
     │   ├── __init__.py
-    │   ├── Controller.py
-    │   └── LoggerController.py
+    │   └── Controller.py
     └── services/
         ├── __init__.py
-        ├── BruteForceGenerator.py
-        ├── RarPasswordTester.py
-        ├── RarExtractor.py
-        └── FileContentReader.py
+        └── WinrarService.py
 ```
 
 ## :play_or_pause_button:How to execute a project
