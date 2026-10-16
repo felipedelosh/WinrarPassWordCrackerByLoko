@@ -5,14 +5,14 @@ FelipedelosH
 # src\Infrastructure\services\CRACKER\SequentialBruteForceService.py
 import os
 import itertools
-from src.Application.services.CRACKER.ISequentialBruteForceService import ISequentialBruteForceService
+from Application.services.CRACKER.IBruteForceService import IBruteForceService
 from src.services.PasswordCombinationGenerator import PasswordCombinationGenerator
 from src.services.TermiteService import TermiteService
 from src.services.WinrarService import WinrarService
 from src.services.BeautifulPrinter import BeautifulPrinter
 
 
-class SequentialBruteForceService(ISequentialBruteForceService):
+class SequentialBruteForceService(IBruteForceService):
     def __init__(self, rar_path, unrar_path, charset, min_len, max_len, temp_path, output_path, logger):
         self.rar_path = rar_path
         self.unrar_path = unrar_path

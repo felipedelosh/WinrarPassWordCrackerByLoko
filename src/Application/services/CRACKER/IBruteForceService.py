@@ -2,11 +2,11 @@
 FelipedelosH
 2026
 """
-# src\Application\services\CRACKER\ISequentialBruteForceService.py
+# src\Application\services\CRACKER\IBruteForceService.py
 from abc import ABC, abstractmethod
 
 
-class ISequentialBruteForceService(ABC):
+class IBruteForceService(ABC):
     @abstractmethod
     def execute(self) -> None:
         pass
