@@ -62,24 +62,25 @@ class Controller:
 
         return charset
 
-    # ---------- Orquestador ----------
+
     def bruteForce(self):
         # Validar rutas
         if not os.path.exists(self.rar_path):
-            print(f"❌ No se encontró {self.RAR_FILE} en la carpeta.")
+            self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_PATH")
             sys.exit(1)
         if not os.path.exists(self.unrar_path):
-            print(f"❌ No se encontró {self.UNRAR} en la carpeta.")
-            print("   Cópialo desde C:\\Program Files\\WinRAR\\UnRAR.exe")
+            self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_FILE")
             sys.exit(1)
 
         total = self.countCombinations(self.charset, self.MIN_LEN, self.MAX_LEN)
-        print(f"🔍 Iniciando fuerza bruta")
-        print(f"   Charset cargado desde {self.CHARSET_FILE}")
-        print(f"   Caracteres: {self.charset}")
-        print(f"   Longitud: {self.MIN_LEN} a {self.MAX_LEN}")
-        print(f"   Combinaciones totales: {total:,}")
-        print(f"   (Ctrl+C para detener)\n")
+        self.logger.info("Controller::bruteForce::TRY")
+        self.logger.info(f"Controller::bruteForce::CHARS::{self.CHARSET_FILE}::TOTAL::{len(self.charset)}")
+        self.logger.info(f"Controller::bruteForce::CHARS::{self.charset}")
+        self.logger.info(f"Controller::bruteForce::CHARS::TOTAL_COMBINATOR::{total:,}")
+        self.logger.info(f"Controller::bruteForce::LEN_FROM::{self.MIN_LEN}::LEN_TO::{self.MAX_LEN}")
+        
+        print("\n=========TERMITES INIT=========")
+        print(f"PRESS: (Ctrl+C) TO STOP\n")
 
         start = time.time()
         count = 0
@@ -94,8 +95,9 @@ class Controller:
 
                 if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
                     elapsed = time.time() - start
-                    print(f"\n\n🎉 ¡CONTRASEÑA ENCONTRADA!: '{password}'")
-                    print(f"   Probadas {count} combinaciones en {elapsed:.1f} segundos.\n")
+                    self.logger.info(f"Controller::bruteForce::OK::OPERATIONS::{count}::TOTAL_TIME_SECONDS::{elapsed:.1f}")
+                    self.logger.info(f"Controller::bruteForce::OK::FILE::{self.RAR_FILE}::PASSWORD::{password}")
+                    print(f"\n\n🎉 ¡PASSWORD!: '{password}'")
                     self.extractAndPrint(password)
                     return
 
