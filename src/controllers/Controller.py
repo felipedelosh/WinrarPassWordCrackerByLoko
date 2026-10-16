@@ -10,7 +10,7 @@ from datetime import datetime
 
 from src.controllers.ConfigController import Config
 from src.CORE.FolderController import FolderController
-from src.controllers.LoggerController import Logger
+from src.CORE.LoggerController import Logger
 from src.services.WinrarService import WinrarService
 # CRACKERS
 from src.services.CRACKER.SequentialBruteForceService import SequentialBruteForceService
