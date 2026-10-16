@@ -40,6 +40,48 @@ WinrarPassWordCrackerByLoko/
         └── WinrarService.py
 ```
 
+## ⚙️ Requirements
+
+1. Install WinRAR
+
+To use this program, you need to install WinRAR on your computer.
+
+WinRAR comes with a small command-line tool called UnRAR.exe, which is the program that actually tests and extracts the RAR file. This project does not include it, so you must get it from your WinRAR installation.
+
+You can download WinRAR for free from the official website:
+https://winrar.es/descargas
+
+2. Copy UnRAR.exe to the project root
+
+After installing WinRAR, find the file UnRAR.exe in the WinRAR installation folder. By default it is located at:
+
+C:\Program Files\WinRAR\UnRAR.exe
+
+Copy that file and paste it into the root folder of this project, next to main.py:
+```
+WinrarPassWordCrackerByLoko/
+├── main.py
+├── characters.txt
+├── UnRAR.exe        👈 here
+├── Docs/
+└── src/
+```
+
+3. Python 3
+
+Make sure you have Python 3 installed. You can check with:
+
+```
+python --version
+```
+
+4. Install dependencies
+
+```
+python -m pip install -r requirements.txt
+```
+
+
 ## :play_or_pause_button:How to execute a project
 
 Double click
