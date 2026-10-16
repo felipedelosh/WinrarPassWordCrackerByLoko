@@ -1,12 +1,50 @@
-# CORE/DependencyInjector.py
+"""
+FelipedelosH
+2026
 
-# Services
-from src.services.CRACKER.SequentialBruteForceService import SequentialBruteForceService
+Centralized Dependency Injector.
+"""
+
+# src/CORE/DependencyInjector.py
+
+import os
+from src.CORE.Config import Config
+from src.CORE.Logger import Logger
+from src.Infrastructure.services.CRACKER.SequentialBruteForceService import (SequentialBruteForceService)
 
 
 class DependencyInjector:
     @staticmethod
-    def build_dependencies(rar_path, unrar_path, charset, min_len, max_len, temp_path, output_path, logger):
+    def build_dependencies(path: str, config: Config) -> dict:
+
+        # CONFIGURATION
+        rar_path = config.getConfig("RAR_FILE_TO_CRACK")
+        unrar_path = config.getConfig("UNRAR_SOFTWARE_FILE_PATH")
+
+        min_len = int(config.getConfig("GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK"))
+        max_len = int(config.getConfig("GEN_CONFIG_LEN_MAX_SIZE_CHAR_SELECT_TO_CRACK"))
+
+        temp_path = os.path.join(path, "TEMP")
+        output_path = os.path.join(path, "OUTPUT")
+
+        # CHARSET
+        charset_path = os.path.join(path, "characters.txt")
+
+        with open(charset_path, "r", encoding="utf-8") as file:
+            content = file.read()
+
+        charset = "".join(
+            c for c in content if c not in ", \n\r\t"
+        )
+
+        charset = "".join(dict.fromkeys(charset))
+
+        if not charset:
+            raise ValueError("The charset cannot be empty.")
+
+        # LOGGER
+        # Sustituir por el constructor real de tu clase Logger.
+        logger = Logger()
 
         # SERVICES - CRACKERS
         sequential_brute_force = SequentialBruteForceService(
@@ -21,5 +59,6 @@ class DependencyInjector:
         )
 
         return {
-            "sequential_brute_force": sequential_brute_force
+            "sequential_brute_force": sequential_brute_force,
+            "logger": logger
         }

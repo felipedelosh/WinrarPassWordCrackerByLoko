@@ -13,7 +13,7 @@ from src.CORE.FolderController import FolderController
 from src.CORE.Logger import Logger
 from src.services.WinrarService import WinrarService
 # CRACKERS
-from src.services.CRACKER.SequentialBruteForceService import SequentialBruteForceService
+from src.Application.services.CRACKER.IBruteForceService import (IBruteForceService)
 
 from src.Models.Enums.Attack import Attack
 
@@ -22,11 +22,12 @@ class Controller:
     This script needs you install winrar: https://winrar.es/descargas
     """
     UNRAR = "UnRAR.exe" # INSTALL :)
-    def __init__(self, path):
+    def __init__(self, path: str, config: Config, dependencies: dict):
         self.path = path
+        self.dependencies = dependencies
         self.output_path = os.path.join(self.path, "OUTPUT")
         self.currentDate = datetime.now().strftime("%Y-%m-%d %H:%M")
-        self.config = Config()
+        self.config = config
         self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
         self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
         self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
@@ -35,44 +36,33 @@ class Controller:
         self.RAR_FILE = self.config.getConfig("RAR_FILE_TO_CRACK")
         self.rar_path = os.path.join(self.path, self.RAR_FILE)
         self.unrar_path = os.path.join(self.path, self.UNRAR)
-        self.charset = self.loadCharset()
+        # self.charset = self.loadCharset()
         FolderController.createInitalFolders(self.path, self.logger)
-
-        self.sequential_service = SequentialBruteForceService(
-            rar_path=self.rar_path,
-            unrar_path=self.unrar_path,
-            charset=self.charset,
-            min_len=self.MIN_LEN,
-            max_len=self.MAX_LEN,
-            temp_path=os.path.join(self.path, "TEMP"),
-            output_path=self.output_path,
-            logger=self.logger,
-        )
         
 
-    # ---------- Carga de charset ----------
-    def loadCharset(self) -> str:
-        """Lee characters.txt desde self.path y devuelve el charset limpio."""
-        charset_path = os.path.join(self.path, self.CHARSET_FILE)
+    # # ---------- Carga de charset ----------
+    # def loadCharset(self) -> str:
+    #     """Lee characters.txt desde self.path y devuelve el charset limpio."""
+    #     charset_path = os.path.join(self.path, self.CHARSET_FILE)
 
-        if not os.path.exists(charset_path):
-            print(f"❌ No se encontró {self.CHARSET_FILE} en la carpeta del proyecto.")
-            sys.exit(1)
+    #     if not os.path.exists(charset_path):
+    #         print(f"❌ No se encontró {self.CHARSET_FILE} en la carpeta del proyecto.")
+    #         sys.exit(1)
 
-        with open(charset_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    #     with open(charset_path, 'r', encoding='utf-8') as f:
+    #         content = f.read()
 
-        # Quitar separadores: comas, espacios, saltos de línea, tabs
-        charset = ''.join(c for c in content if c not in ', \n\r\t')
+    #     # Quitar separadores: comas, espacios, saltos de línea, tabs
+    #     charset = ''.join(c for c in content if c not in ', \n\r\t')
 
-        # Quitar duplicados preservando el orden
-        charset = ''.join(dict.fromkeys(charset))
+    #     # Quitar duplicados preservando el orden
+    #     charset = ''.join(dict.fromkeys(charset))
 
-        if not charset:
-            print(f"❌ {self.CHARSET_FILE} está vacío o no contiene caracteres válidos.")
-            sys.exit(1)
+    #     if not charset:
+    #         print(f"❌ {self.CHARSET_FILE} está vacío o no contiene caracteres válidos.")
+    #         sys.exit(1)
 
-        return charset
+    #     return charset
 
     def bruteForce(self):
         _mode = self.config.getConfig("GEN_CONFIG_ATTACK_MODE")
@@ -81,7 +71,8 @@ class Controller:
             pass
 
         if _mode == str(Attack.SEQUENTIAL):
-            return self.sequential_service.execute()
+            print(self.dependencies)
+            return self.dependencies["sequential_brute_force"].execute()
         
         return None
 

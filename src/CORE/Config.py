@@ -19,6 +19,8 @@ class Config:
             # self.config[""] = os.getenv("")
             self.config["RAR_FILE_TO_CRACK"] = os.getenv("RAR_FILE_TO_CRACK")
 
+            self.config["UNRAR_SOFTWARE_FILE_PATH"] = os.getenv("UNRAR_SOFTWARE_FILE_PATH")
+
             self.config["GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK"] = os.getenv("GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK")
             self.config["GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK"] = int(self.config["GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK"])
 
