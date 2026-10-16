@@ -7,8 +7,8 @@ import os
 import itertools
 from src.Application.services.CRACKER.IBruteForceService import IBruteForceService
 from src.services.PasswordCombinationGenerator import PasswordCombinationGenerator
-from src.services.TermiteService import TermiteService
-from src.services.WinrarService import WinrarService
+from src.Infrastructure.services.TermiteService import TermiteService
+from src.Infrastructure.services.WinrarService import WinrarService
 from src.Infrastructure.services.BeautifulPrinter import BeautifulPrinter
 
 

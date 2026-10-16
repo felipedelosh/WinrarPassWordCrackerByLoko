@@ -9,8 +9,7 @@ from datetime import datetime
 
 from src.CORE.Config import Config
 from src.CORE.FolderController import FolderController
-from src.CORE.Logger import Logger
-from src.services.WinrarService import WinrarService
+from src.Infrastructure.services.WinrarService import WinrarService
 from src.Models.Enums.Attack import Attack
 
 class Controller:
