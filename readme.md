@@ -31,23 +31,32 @@ WinrarPassWordCrackerByLoko/
 ├── INPUT/
 │   └── rar.rar
 ├── OUTPUT/
-│   ├── files
-│   └── log
+│   ├── un_rar_files
+│   └── log.log
 ├── TEMP/
 └── src/
-    ├── __init__.py
-    ├── controllers/
-    │   ├── ConfigController.py
+    ├── Application/
+    │   └── services/
+    │       └── CRACKER/
+    │           └── IBruteForceService.py
+    ├── Infrastructure/
+    │   └── services/
+    │       ├── CRACKER/
+    │       │   └── SequentialBruteForceService.py
+    │       ├── BeautifulPrinter.py
+    │       ├── PasswordCombinationGenerator.py
+    │       ├── TermiteService.py
+    │       └── WinrarService.py
+    ├── CORE/
+    │   ├── Config.py
+    │   ├── DependencyInjector.py
     │   ├── FolderController.py
-    │   ├── LoggerController.py
-    │   └── Controller.py
-    └── services/
-        ├── CRACKER/
-        │   └── SequentialBruteForceService.py
-        ├── BeautifulPrinter.py
-        ├── PasswordCombinationGenerator.py
-        ├── TermiteService.py
-        └── WinrarService.py
+    │   └── Logger.py
+    ├── Models/
+    │   └── Enums/
+    │       └── Attack.py
+    └── controllers/
+        └── Controller.py
 ```
 
 ## ⚙️ Requirements
