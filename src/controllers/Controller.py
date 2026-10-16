@@ -15,6 +15,8 @@ from src.services.WinrarService import WinrarService
 # CRACKERS
 from src.services.CRACKER.SequentialBruteForceService import SequentialBruteForceService
 
+from src.Models.Enums.Attack import Attack
+
 class Controller:
     """
     This script needs you install winrar: https://winrar.es/descargas
@@ -25,7 +27,6 @@ class Controller:
         self.output_path = os.path.join(self.path, "OUTPUT")
         self.currentDate = datetime.now().strftime("%Y-%m-%d %H:%M")
         self.config = Config()
-        
         self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
         self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
         self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
@@ -74,7 +75,15 @@ class Controller:
         return charset
 
     def bruteForce(self):
-        return self.sequential_service.execute()
+        _mode = self.config.getConfig("GEN_CONFIG_ATTACK_MODE")
+        self.logger.info(f"Controller::bruteForce::TRY::{_mode}")
+        if _mode == str(Attack.RANDOM):
+            pass
+
+        if _mode == str(Attack.SEQUENTIAL):
+            return self.sequential_service.execute()
+        
+        return None
 
     def extractAndPrint(self, password):
         self.logger.info(f"Controller::extractAndPrint::TRY::{password}")
