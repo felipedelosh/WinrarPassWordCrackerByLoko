@@ -2,7 +2,9 @@
 FelipedelosH
 2026
 
-Controller: orquesta el ataque de fuerza bruta sobre un archivo RAR.
+Main application controller responsible for orchestrating
+brute-force strategies, initializing required resources,
+managing dependencies, and saving execution logs.
 """
 import os
 from datetime import datetime
