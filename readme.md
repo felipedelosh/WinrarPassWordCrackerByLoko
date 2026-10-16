@@ -25,15 +25,22 @@ That means it generates many possible passwords and tests them one by one.
 WinrarPassWordCrackerByLoko/
 ├── main.py
 ├── characters.txt
+├── .env
 ├── UnRAR.exe
 ├── Docs/
-│   ├── banner.png
-│   └── rar_examples/
-│       └── abc.rar
+├── INPUT/
+│   └── rar.rar
+├── OUTPUT/
+│   ├── files
+│   └── log
+├── TEMP/
 └── src/
     ├── __init__.py
     ├── controllers/
     │   ├── __init__.py
+    │   ├── ConfigController.py
+    │   ├── FolderController.py
+    │   ├── LoggerController.py
     │   └── Controller.py
     └── services/
         ├── __init__.py
@@ -85,7 +92,7 @@ python -m pip install -r requirements.txt
 ## :play_or_pause_button:How to execute a project
 
 ```
-Double click mian.py
+Double click main.py
 ```
 
 ```
