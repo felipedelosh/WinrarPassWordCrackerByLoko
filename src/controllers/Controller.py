@@ -20,7 +20,6 @@ class Controller:
     # ============ CONFIG ============
     RAR_FILE     = os.path.join("Docs", "rar_examples", "abc.rar")
     UNRAR        = "UnRAR.exe"
-    CHARSET_FILE = "characters.txt"
 
     MIN_LEN = 1
     MAX_LEN = 4   # 👈 cuidado: cada carácter más multiplica el tiempo
@@ -29,6 +28,7 @@ class Controller:
     def __init__(self, path):
         self.currentDate = datetime.now().strftime("%Y-%m-%d %H:%M")
         self.config = Config()
+        self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
         self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
         self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
         self.path = path
