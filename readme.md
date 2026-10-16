@@ -37,13 +37,12 @@ WinrarPassWordCrackerByLoko/
 └── src/
     ├── __init__.py
     ├── controllers/
-    │   ├── __init__.py
     │   ├── ConfigController.py
     │   ├── FolderController.py
     │   ├── LoggerController.py
     │   └── Controller.py
     └── services/
-        ├── __init__.py
+        ├── BeautifulPrinter.py
         └── WinrarService.py
 ```
 
