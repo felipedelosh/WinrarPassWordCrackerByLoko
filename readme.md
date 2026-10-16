@@ -124,12 +124,16 @@ C:\Users\docto\AppData\Local\Python\pythoncore-3.14-64\python.exe d:/PYTHON/Winr
 
 ## :hammer_and_wrench:Tech.
 
-- code programing
-- framework
+- Python
+- python-dotenv
+- subprocess
+- os
+- itertools
+- .txt
 
 ## :warning:Warning.
 
-- limitations.
+- This software is develop in windows 11 with winrar 7.23
 
 ## Autor
 
