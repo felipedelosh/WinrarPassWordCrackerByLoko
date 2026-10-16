@@ -27,6 +27,8 @@ class Config:
 
             self.config["GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE"] = os.getenv("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
 
+            self.config["GEN_CONFIG_ATTACK_MODE"] = os.getenv("GEN_CONFIG_ATTACK_MODE")
+
             self.config["GEN_CONFIG_DISPLAY_LOGS"] = os.getenv("GEN_CONFIG_DISPLAY_LOGS")
             self.config["GEN_CONFIG_DISPLAY_LOGS"] = True if str(self.config["GEN_CONFIG_DISPLAY_LOGS"]).strip().lower() == "true" else False
             # END CONFIG ENV VARS
