@@ -4,6 +4,9 @@ FelipedelosH
 """
 # src\Infrastructure\services\CRACKER\SequentialBruteForceService.py
 import os
+from datetime import datetime
+from src.Application.repositories.IWorkRepository import IWorkRepository
+from src.Models.Enums.WorkStatus import WorkStatus
 from src.Application.services.CRACKER.IBruteForceService import IBruteForceService
 from src.Infrastructure.services.PasswordCombinationGenerator import PasswordCombinationGenerator
 from src.Infrastructure.services.TermiteService import TermiteService
@@ -12,7 +15,7 @@ from src.Infrastructure.services.BeautifulPrinter import BeautifulPrinter
 
 
 class SequentialBruteForceService(IBruteForceService):
-    def __init__(self, rar_path, unrar_path, charset, min_len, max_len, temp_path, output_path, logger):
+    def __init__(self, rar_path, unrar_path, charset, min_len, max_len, temp_path, output_path, work_repository, logger):
         self.rar_path = rar_path
         self.unrar_path = unrar_path
         self.charset = charset
@@ -20,6 +23,7 @@ class SequentialBruteForceService(IBruteForceService):
         self.max_len = max_len
         self.temp_path = temp_path
         self.output_path = output_path
+        self.work_repository = work_repository
         self.logger = logger
 
 
@@ -41,6 +45,9 @@ class SequentialBruteForceService(IBruteForceService):
             for length in range(self.min_len, self.max_len + 1):
                 if self._run_colony(length):
                     return True
+
+                # EVENT: COLONY_COMPLETED
+                self._markColonyCompleted(length)
         except KeyboardInterrupt:
             self.logger.warn("SequentialBruteForceService::execute::STOP_PROCESS_BY_USER")
             return False
@@ -107,3 +114,30 @@ class SequentialBruteForceService(IBruteForceService):
                 fpath = os.path.join(root, fname)
                 size = os.path.getsize(fpath)
                 self.logger.info(f"SequentialBruteForceService::_extract_and_log::FILE::{fname}::{size}_bytes")
+
+    def _markColonyCompleted(self, length: int):
+        self.logger.info(
+            f"SequentialBruteForceService::_markColonyCompleted::TRY::LEN::{length}"
+        )
+
+        # LOAD WORK
+        work = self.work_repository.load()
+
+        if work is None:
+            raise RuntimeError("WORK_NOT_FOUND")
+
+        # UPDATE COMPLETED COLONIES
+        if length not in work.completed_colonies:
+            work.completed_colonies.append(length)
+
+        # UPDATE PROGRESS
+        work.current_colony = None
+        work.current_colony_index = -1
+        work.updated_at = datetime.now().isoformat()
+
+        # SAVE WORK
+        self.work_repository.save(work)
+
+        self.logger.info(
+            f"SequentialBruteForceService::_markColonyCompleted::OK::LEN::{length}"
+        )

@@ -60,6 +60,7 @@ class DependencyInjector:
             max_len=max_len,
             temp_path=temp_path,
             output_path=output_path,
+            work_repository=work_repository,
             logger=logger
         )
 
