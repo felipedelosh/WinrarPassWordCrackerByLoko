@@ -2,75 +2,104 @@
 FelipedelosH
 2026
 
-This is the main controller of WinrarPassWordCrackerByLoko
+Controller: orquesta el ataque de fuerza bruta sobre un archivo RAR.
 """
 import os
-import subprocess
+import sys
+import time
+import string
+import itertools
+
+from src.services.WinrarService import WinrarService
 
 
 class Controller:
-    """Encapsula todas las operaciones sobre un archivo RAR."""
 
-    def __init__(self, unrar_path):
-        self.unrar_path = unrar_path
+    # ============ CONFIG ============
+    RAR_FILE = os.path.join("Docs", "rar_examples", "abc.rar")
+    UNRAR    = "UnRAR.exe"
 
-    # ---------- Probar contraseña ----------
-    def try_password(self, rar_path, password, timeout=10):
-        """Devuelve True si la contraseña es correcta."""
+    # Charset a usar (personalízalo)
+    CHARSET = string.ascii_lowercase  # a-z
+    # CHARSET = string.ascii_lowercase + string.digits          # a-z 0-9
+    # CHARSET = string.ascii_letters + string.digits            # a-z A-Z 0-9
+    # CHARSET = string.ascii_letters + string.digits + "._-@:/" # + símbolos
+
+    MIN_LEN = 1
+    MAX_LEN = 4   # 👈 cuidado: cada carácter más multiplica el tiempo
+    # ================================
+
+    def __init__(self, path):
+        self.path = path
+        self.rar_path = os.path.join(self.path, self.RAR_FILE)
+        self.unrar_path = os.path.join(self.path, self.UNRAR)
+
+    def bruteForce(self):
+        # Validar rutas
+        if not os.path.exists(self.rar_path):
+            print(f"❌ No se encontró {self.RAR_FILE} en la carpeta.")
+            sys.exit(1)
+        if not os.path.exists(self.unrar_path):
+            print(f"❌ No se encontró {self.UNRAR} en la carpeta.")
+            print("   Cópialo desde C:\\Program Files\\WinRAR\\UnRAR.exe")
+            sys.exit(1)
+
+        total = self.countCombinations(self.CHARSET, self.MIN_LEN, self.MAX_LEN)
+        print(f"🔍 Iniciando fuerza bruta")
+        print(f"   Charset: {self.CHARSET}")
+        print(f"   Longitud: {self.MIN_LEN} a {self.MAX_LEN}")
+        print(f"   Combinaciones totales: {total:,}")
+        print(f"   (Ctrl+C para detener)\n")
+
+        start = time.time()
+        count = 0
+
         try:
-            result = subprocess.run(
-                [self.unrar_path, 't', '-p' + password, rar_path],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=timeout
-            )
-            return result.returncode == 0
-        except Exception:
-            return False
+            for password in self.bruteForceGenerator(self.CHARSET, self.MIN_LEN, self.MAX_LEN):
+                count += 1
+                if count % 100 == 0 or count == 1:
+                    elapsed = time.time() - start
+                    speed = count / elapsed if elapsed > 0 else 0
+                    print(f"   [{count}/{total}] probando: {password}  ({speed:.1f}/s)", end='\r')
 
-    # ---------- Extraer ----------
-    def extract_content(self, rar_path, password, out_dir_name="extraido"):
-        """Extrae el RAR a una carpeta y devuelve la ruta de esa carpeta."""
-        out_dir = os.path.join(os.path.dirname(rar_path), out_dir_name)
-        os.makedirs(out_dir, exist_ok=True)
+                if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
+                    elapsed = time.time() - start
+                    print(f"\n\n🎉 ¡CONTRASEÑA ENCONTRADA!: '{password}'")
+                    print(f"   Probadas {count} combinaciones en {elapsed:.1f} segundos.\n")
+                    self.extractAndPrint(password)
+                    return
 
-        result = subprocess.run(
-            [self.unrar_path, 'x', '-p' + password, '-o+', rar_path, out_dir + os.sep],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
+        except KeyboardInterrupt:
+            print("\n\n⏹️ Detenido por el usuario.")
+            return
 
-        if result.returncode != 0:
-            raise RuntimeError(f"No se pudo extraer: {result.stderr}")
+        print("\n\n❌ No se encontró la contraseña en el rango probado.")
 
-        return out_dir
+    # ---------- Helpers internos ----------
+    def bruteForceGenerator(self, charset, min_len, max_len):
+        """Generador que produce todas las combinaciones posibles."""
+        for length in range(min_len, max_len + 1):
+            for combo in itertools.product(charset, repeat=length):
+                yield ''.join(combo)
 
-    # ---------- Listar archivos extraídos ----------
-    def list_extracted_files(self, folder):
-        """Devuelve la lista de rutas absolutas de archivos dentro de folder."""
-        files = []
-        for root, _, filenames in os.walk(folder):
-            for fname in filenames:
-                files.append(os.path.join(root, fname))
-        return files
+    def countCombinations(self, charset, min_len, max_len) -> int:
+        return sum(len(charset) ** n for n in range(min_len, max_len + 1))
 
-    # ---------- Guardar resultados ----------
-    def save_results(self, password, out_dir, save_path=None):
-        """Guarda la contraseña y el listado de archivos extraídos en un .txt.
-        Devuelve la ruta del archivo generado."""
-        if save_path is None:
-            save_path = os.path.join(out_dir, "resultado.txt")
+    def extractAndPrint(self, password):
+        out_dir = WinrarService.extractContent(self.rar_path, self.unrar_path, password)
+        if not out_dir:
+            return
 
-        files = self.list_extracted_files(out_dir)
+        print(f"✅ Extraído en: {out_dir}\n")
+        print("📄 Contenido de los archivos de texto encontrados:\n")
 
-        with open(save_path, 'w', encoding='utf-8') as f:
-            f.write(f"Contraseña encontrada: {password}\n")
-            f.write(f"Carpeta de extracción: {out_dir}\n")
-            f.write(f"Total archivos extraídos: {len(files)}\n")
-            f.write("-" * 40 + "\n")
-            for path in files:
-                rel = os.path.relpath(path, out_dir)
-                f.write(f"  - {rel}\n")
-
-        return save_path
+        for root, _, files in os.walk(out_dir):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                print(f"--- {fname} ---")
+                try:
+                    with open(fpath, 'r', encoding='utf-8', errors='ignore') as f:
+                        print(f.read())
+                except Exception as e:
+                    print(f"(No es texto legible: {e})")
+                print()
