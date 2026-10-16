@@ -150,6 +150,8 @@ class Controller:
         self.logger.info(f"Controller::extractAndPrint::EXTRACT::{out_dir}")
         for root, _, files in os.walk(out_dir):
             for fname in files:
+                if ".log" in fname:
+                    continue
                 fpath = os.path.join(root, fname)
                 size = os.path.getsize(fpath)
                 self.logger.info(f"Controller::extractAndPrint::FILE::{fname}::{size}_bytes")
