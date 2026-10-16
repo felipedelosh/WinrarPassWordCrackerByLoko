@@ -17,7 +17,8 @@ from src.services.PasswordCombinationGenerator import PasswordCombinationGenerat
 from src.services.BeautifulPrinter import BeautifulPrinter
 from src.services.WinrarService import WinrarService
 from src.services.TermiteService import TermiteService
-
+# CRACKERS
+from src.services.CRACKER.SequentialBruteForceService import SequentialBruteForceService
 
 class Controller:
     """
@@ -40,6 +41,17 @@ class Controller:
         self.unrar_path = os.path.join(self.path, self.UNRAR)
         self.charset = self.loadCharset()
         FolderController.createInitalFolders(self.path, self.logger)
+
+        self.sequential_service = SequentialBruteForceService(
+            rar_path=self.rar_path,
+            unrar_path=self.unrar_path,
+            charset=self.charset,
+            min_len=self.MIN_LEN,
+            max_len=self.MAX_LEN,
+            temp_path=os.path.join(self.path, "TEMP"),
+            output_path=self.output_path,
+            logger=self.logger,
+        )
         
 
     # ---------- Carga de charset ----------
@@ -66,75 +78,78 @@ class Controller:
 
         return charset
 
-
     def bruteForce(self):
-        if not os.path.exists(self.rar_path):
-            self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_PATH")
-            sys.exit(1)
-        if not os.path.exists(self.unrar_path):
-            self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_FILE")
-            sys.exit(1)
+        return self.sequential_service.execute()
 
-        total = PasswordCombinationGenerator.countTotal(self.charset, self.MIN_LEN, self.MAX_LEN)
-        self.logger.info("Controller::bruteForce::TRY")
-        self.logger.info(f"Controller::bruteForce::CHARS::{self.CHARSET_FILE}::TOTAL::{len(self.charset)}")
-        self.logger.info(f"Controller::bruteForce::CHARS::{self.charset}")
-        self.logger.info(f"Controller::bruteForce::CHARS::TOTAL_COMBINATOR::{total:,}")
-        self.logger.info(f"Controller::bruteForce::LEN_FROM::{self.MIN_LEN}::LEN_TO::{self.MAX_LEN}")
 
-        print("\n=========TERMITES INIT=========")
-        print(f"PRESS: (Ctrl+C) TO STOP\n")
+    # def bruteForce(self):
+    #     if not os.path.exists(self.rar_path):
+    #         self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_PATH")
+    #         sys.exit(1)
+    #     if not os.path.exists(self.unrar_path):
+    #         self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_FILE")
+    #         sys.exit(1)
 
-        temp_path = os.path.join(self.path, "TEMP")
-        try:
-            for length in range(self.MIN_LEN, self.MAX_LEN + 1):
-                self.logger.info(f"Controller::bruteForce::SPAWN_COLONY::LEN::{length}")
-                print(f"\n>>> SPAWNING COLONY :: LENGTH {length}")
+    #     total = PasswordCombinationGenerator.countTotal(self.charset, self.MIN_LEN, self.MAX_LEN)
+    #     self.logger.info("Controller::bruteForce::TRY")
+    #     self.logger.info(f"Controller::bruteForce::CHARS::{self.CHARSET_FILE}::TOTAL::{len(self.charset)}")
+    #     self.logger.info(f"Controller::bruteForce::CHARS::{self.charset}")
+    #     self.logger.info(f"Controller::bruteForce::CHARS::TOTAL_COMBINATOR::{total:,}")
+    #     self.logger.info(f"Controller::bruteForce::LEN_FROM::{self.MIN_LEN}::LEN_TO::{self.MAX_LEN}")
 
-                colony_path = TermiteService.spawnColony(temp_path, self.charset, length, self.logger)
-                files = TermiteService.listColony(colony_path)
-                total_by_length = len(files)
+    #     print("\n=========TERMITES INIT=========")
+    #     print(f"PRESS: (Ctrl+C) TO STOP\n")
 
-                tracker = BeautifulPrinter(
-                    label=f"TERMITES-L{length}",
-                    total=total_by_length,
-                    inline=True,
-                    update_every=100,
-                    show_current=True,
-                    show_speed=True,
-                    show_bar=False,
-                    header=None,
-                    footer=False,
-                )
-                tracker.start()
+    #     temp_path = os.path.join(self.path, "TEMP")
+    #     try:
+    #         for length in range(self.MIN_LEN, self.MAX_LEN + 1):
+    #             self.logger.info(f"Controller::bruteForce::SPAWN_COLONY::LEN::{length}")
+    #             print(f"\n>>> SPAWNING COLONY :: LENGTH {length}")
 
-                for filename in files:
-                    file_path = os.path.join(colony_path, filename)
-                    password = TermiteService.readTermite(file_path)
+    #             colony_path = TermiteService.spawnColony(temp_path, self.charset, length, self.logger)
+    #             files = TermiteService.listColony(colony_path)
+    #             total_by_length = len(files)
 
-                    tracker.update(extra_info=f"trying: {password}")
+    #             tracker = BeautifulPrinter(
+    #                 label=f"TERMITES-L{length}",
+    #                 total=total_by_length,
+    #                 inline=True,
+    #                 update_every=100,
+    #                 show_current=True,
+    #                 show_speed=True,
+    #                 show_bar=False,
+    #                 header=None,
+    #                 footer=False,
+    #             )
+    #             tracker.start()
 
-                    if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
-                        TermiteService.survive(file_path, self.output_path)
-                        elapsed = tracker.elapsed
-                        tracker.newline()
-                        self.logger.info(
-                            f"Controller::bruteForce::TERMITE_WINNER::{filename}::"
-                            f"PASSWORD::{password}::TIME::{elapsed:.1f}s"
-                        )
-                        print(f"\n\n🎉 ¡PASSWORD!: '{password}'")
-                        self.extractAndPrint(password)
-                        return
+    #             for filename in files:
+    #                 file_path = os.path.join(colony_path, filename)
+    #                 password = TermiteService.readTermite(file_path)
 
-                    TermiteService.kill(file_path)
+    #                 tracker.update(extra_info=f"trying: {password}")
 
-                tracker.newline()
-                self.logger.info(f"Controller::bruteForce::COLONY_DEAD::LEN::{length}")
-        except KeyboardInterrupt:
-            self.logger.warn("Controller::bruteForce::STOP_PROCESS_BY_USER")
-            return
+    #                 if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
+    #                     TermiteService.survive(file_path, self.output_path)
+    #                     elapsed = tracker.elapsed
+    #                     tracker.newline()
+    #                     self.logger.info(
+    #                         f"Controller::bruteForce::TERMITE_WINNER::{filename}::"
+    #                         f"PASSWORD::{password}::TIME::{elapsed:.1f}s"
+    #                     )
+    #                     print(f"\n\n🎉 ¡PASSWORD!: '{password}'")
+    #                     self.extractAndPrint(password)
+    #                     return
 
-        self.logger.info(f"Controller::bruteForce::DONT_CRACK_PASSWORD::FILE::{self.RAR_FILE}")
+    #                 TermiteService.kill(file_path)
+
+    #             tracker.newline()
+    #             self.logger.info(f"Controller::bruteForce::COLONY_DEAD::LEN::{length}")
+    #     except KeyboardInterrupt:
+    #         self.logger.warn("Controller::bruteForce::STOP_PROCESS_BY_USER")
+    #         return
+
+    #     self.logger.info(f"Controller::bruteForce::DONT_CRACK_PASSWORD::FILE::{self.RAR_FILE}")
 
     def extractAndPrint(self, password):
         self.logger.info(f"Controller::extractAndPrint::TRY::{password}")
