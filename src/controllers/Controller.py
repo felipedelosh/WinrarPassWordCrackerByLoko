@@ -19,9 +19,6 @@ from src.services.WinrarService import WinrarService
 
 class Controller:
     UNRAR        = "UnRAR.exe"
-
-    MIN_LEN = 1
-    MAX_LEN = 4   # 👈 cuidado: cada carácter más multiplica el tiempo
     def __init__(self, path):
         self.path = path
         self.output_path = os.path.join(self.path, "OUTPUT")
@@ -31,7 +28,8 @@ class Controller:
         self.logger = Logger(self.config.getConfig("GEN_CONFIG_DISPLAY_LOGS"))
         self.logger.info(f"Controller::__init__::START_AT::{self.currentDate}")
         self.CHARSET_FILE = self.config.getConfig("GEN_CONFIG_CHARACTERS_ARR_INPUT_FILE")
-
+        self.MIN_LEN = self.config.getConfig("GEN_CONFIG_LEN_MIN_SIZE_CHAR_SELECT_TO_CRACK")
+        self.MAX_LEN = self.config.getConfig("GEN_CONFIG_LEN_MAX_SIZE_CHAR_SELECT_TO_CRACK")
         self.RAR_FILE = self.config.getConfig("RAR_FILE_TO_CRACK")
         self.rar_path = os.path.join(self.path, self.RAR_FILE)
         self.unrar_path = os.path.join(self.path, self.UNRAR)
@@ -127,23 +125,18 @@ class Controller:
         return sum(len(charset) ** n for n in range(min_len, max_len + 1))
 
     def extractAndPrint(self, password):
+        self.logger.info(f"Controller::extractAndPrint::TRY::{password}")
         out_dir = WinrarService.extractContent(self.rar_path, self.unrar_path, password, self.output_path)
         if not out_dir:
+            self.logger.error(f"Controller::extractAndPrint::ERR_PATH::{out_dir}::NOT_FOUND")
             return
 
-        print(f"✅ Extraído en: {out_dir}\n")
-        print("📄 Contenido de los archivos de texto encontrados:\n")
-
+        self.logger.info(f"Controller::extractAndPrint::EXTRACT::{out_dir}")
         for root, _, files in os.walk(out_dir):
             for fname in files:
                 fpath = os.path.join(root, fname)
-                print(f"--- {fname} ---")
-                try:
-                    with open(fpath, 'r', encoding='utf-8', errors='ignore') as f:
-                        print(f.read())
-                except Exception as e:
-                    print(f"(No es texto legible: {e})")
-                print()
+                size = os.path.getsize(fpath)
+                self.logger.info(f"Controller::extractAndPrint::FILE::{fname}::{size}_bytes")
 
     def saveLogs(self):
         try:
