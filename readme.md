@@ -42,8 +42,8 @@ WinrarPassWordCrackerByLoko/
     │   ├── LoggerController.py
     │   └── Controller.py
     └── services/
-    │   ├── CRACKER/
-    │   │   └── SequentialBruteForceService.py
+        ├── CRACKER/
+        │   └── SequentialBruteForceService.py
         ├── BeautifulPrinter.py
         ├── PasswordCombinationGenerator.py
         ├── TermiteService.py
