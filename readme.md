@@ -43,6 +43,8 @@ WinrarPassWordCrackerByLoko/
     │   └── Controller.py
     └── services/
         ├── BeautifulPrinter.py
+        ├── PasswordCombinationGenerator.py
+        ├── TermiteService.py
         └── WinrarService.py
 ```
 
