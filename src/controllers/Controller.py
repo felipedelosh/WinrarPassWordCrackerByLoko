@@ -5,23 +5,15 @@ FelipedelosH
 Controller: orquesta el ataque de fuerza bruta sobre un archivo RAR.
 """
 import os
-import sys
 from datetime import datetime
 
 from src.CORE.Config import Config
 from src.CORE.FolderController import FolderController
 from src.CORE.Logger import Logger
 from src.services.WinrarService import WinrarService
-# CRACKERS
-from src.Application.services.CRACKER.IBruteForceService import (IBruteForceService)
-
 from src.Models.Enums.Attack import Attack
 
 class Controller:
-    """
-    This script needs you install winrar: https://winrar.es/descargas
-    """
-    UNRAR = "UnRAR.exe" # INSTALL :)
     def __init__(self, path: str, config: Config, dependencies: dict):
         self.path = path
         self.dependencies = dependencies
@@ -35,34 +27,8 @@ class Controller:
         self.MAX_LEN = self.config.getConfig("GEN_CONFIG_LEN_MAX_SIZE_CHAR_SELECT_TO_CRACK")
         self.RAR_FILE = self.config.getConfig("RAR_FILE_TO_CRACK")
         self.rar_path = os.path.join(self.path, self.RAR_FILE)
-        self.unrar_path = os.path.join(self.path, self.UNRAR)
-        # self.charset = self.loadCharset()
+        self.unrar_path = os.path.join(self.path, self.config.getConfig("UNRAR_SOFTWARE_FILE_PATH"))
         FolderController.createInitalFolders(self.path, self.logger)
-        
-
-    # # ---------- Carga de charset ----------
-    # def loadCharset(self) -> str:
-    #     """Lee characters.txt desde self.path y devuelve el charset limpio."""
-    #     charset_path = os.path.join(self.path, self.CHARSET_FILE)
-
-    #     if not os.path.exists(charset_path):
-    #         print(f"❌ No se encontró {self.CHARSET_FILE} en la carpeta del proyecto.")
-    #         sys.exit(1)
-
-    #     with open(charset_path, 'r', encoding='utf-8') as f:
-    #         content = f.read()
-
-    #     # Quitar separadores: comas, espacios, saltos de línea, tabs
-    #     charset = ''.join(c for c in content if c not in ', \n\r\t')
-
-    #     # Quitar duplicados preservando el orden
-    #     charset = ''.join(dict.fromkeys(charset))
-
-    #     if not charset:
-    #         print(f"❌ {self.CHARSET_FILE} está vacío o no contiene caracteres válidos.")
-    #         sys.exit(1)
-
-    #     return charset
 
     def bruteForce(self):
         _mode = self.config.getConfig("GEN_CONFIG_ATTACK_MODE")
@@ -71,7 +37,6 @@ class Controller:
             pass
 
         if _mode == str(Attack.SEQUENTIAL):
-            print(self.dependencies)
             return self.dependencies["sequential_brute_force"].execute()
         
         return None

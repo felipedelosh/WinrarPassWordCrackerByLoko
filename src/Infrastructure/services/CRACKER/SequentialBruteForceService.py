@@ -9,7 +9,7 @@ from src.Application.services.CRACKER.IBruteForceService import IBruteForceServi
 from src.services.PasswordCombinationGenerator import PasswordCombinationGenerator
 from src.services.TermiteService import TermiteService
 from src.services.WinrarService import WinrarService
-from src.services.BeautifulPrinter import BeautifulPrinter
+from src.Infrastructure.services.BeautifulPrinter import BeautifulPrinter
 
 
 class SequentialBruteForceService(IBruteForceService):
