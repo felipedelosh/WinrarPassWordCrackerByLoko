@@ -8,7 +8,7 @@ import os
 import sys
 from datetime import datetime
 
-from src.controllers.ConfigController import Config
+from src.CORE.ConfigController import Config
 from src.CORE.FolderController import FolderController
 from src.CORE.LoggerController import Logger
 from src.services.WinrarService import WinrarService
