@@ -13,6 +13,7 @@ from datetime import datetime
 from src.controllers.ConfigController import Config
 from src.controllers.FolderController import FolderController
 from src.controllers.LoggerController import Logger
+from src.services.BeautifulPrinter import BeautifulPrinter
 from src.services.WinrarService import WinrarService
 
 
@@ -64,7 +65,6 @@ class Controller:
 
 
     def bruteForce(self):
-        # Validar rutas
         if not os.path.exists(self.rar_path):
             self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_PATH")
             sys.exit(1)
@@ -82,28 +82,38 @@ class Controller:
         print("\n=========TERMITES INIT=========")
         print(f"PRESS: (Ctrl+C) TO STOP\n")
 
-        start = time.time()
-        count = 0
+
+        tracker = BeautifulPrinter(
+            label="TERMITES",
+            total=total,
+            inline=True,
+            update_every=100,
+            show_current=True,
+            show_speed=True,
+            show_bar=False,
+            header=None,
+            footer=False,
+        )
+        tracker.start()
 
         try:
             for password in self.bruteForceGenerator(self.charset, self.MIN_LEN, self.MAX_LEN):
-                count += 1
-                if count % 100 == 0 or count == 1:
-                    elapsed = time.time() - start
-                    speed = count / elapsed if elapsed > 0 else 0
-                    print(f"   [{count}/{total}] probando: {password}  ({speed:.1f}/s)", end='\r')
+                tracker.update(extra_info=f"trying: {password}")
 
                 if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
-                    elapsed = time.time() - start
-                    self.logger.info(f"Controller::bruteForce::CRACK::OPERATIONS::{count}::TOTAL_TIME_SECONDS::{elapsed:.1f}")
+                    elapsed = tracker.elapsed
+                    tracker.newline()
+                    self.logger.info(f"Controller::bruteForce::CRACK::OPERATIONS::{tracker.current}::TOTAL_TIME_SECONDS::{elapsed:.1f}")
                     self.logger.info(f"Controller::bruteForce::OK::FILE::{self.RAR_FILE}::PASSWORD::{password}")
                     print(f"\n\n🎉 ¡PASSWORD!: '{password}'")
                     self.extractAndPrint(password)
                     return
 
         except KeyboardInterrupt:
+            tracker.newline()
             self.logger.warn("Controller::bruteForce::STOP_PROCESS_BY_USER")
             return
+        tracker.newline()
         self.logger.info(f"Controller::bruteForce::DONT_CRACK_PASSWORD::FILE::{self.RAR_FILE}")
 
     # ---------- Helpers internos ----------
