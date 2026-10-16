@@ -13,6 +13,7 @@ from datetime import datetime
 from src.controllers.ConfigController import Config
 from src.controllers.FolderController import FolderController
 from src.controllers.LoggerController import Logger
+from src.services.PasswordCombinationGenerator import PasswordCombinationGenerator
 from src.services.BeautifulPrinter import BeautifulPrinter
 from src.services.WinrarService import WinrarService
 
@@ -70,59 +71,74 @@ class Controller:
             self.logger.error(f"Controller::bruteForce::ERR_FILE_INPUT::{self.RAR_FILE}::DONT_EXITST_FILE")
             sys.exit(1)
 
-        total = self.countCombinations(self.charset, self.MIN_LEN, self.MAX_LEN)
+        total = PasswordCombinationGenerator.countTotal(self.charset, self.MIN_LEN, self.MAX_LEN)
         self.logger.info("Controller::bruteForce::TRY")
         self.logger.info(f"Controller::bruteForce::CHARS::{self.CHARSET_FILE}::TOTAL::{len(self.charset)}")
         self.logger.info(f"Controller::bruteForce::CHARS::{self.charset}")
         self.logger.info(f"Controller::bruteForce::CHARS::TOTAL_COMBINATOR::{total:,}")
         self.logger.info(f"Controller::bruteForce::LEN_FROM::{self.MIN_LEN}::LEN_TO::{self.MAX_LEN}")
-        
+
         print("\n=========TERMITES INIT=========")
         print(f"PRESS: (Ctrl+C) TO STOP\n")
 
-
-        tracker = BeautifulPrinter(
-            label="TERMITES",
-            total=total,
-            inline=True,
-            update_every=100,
-            show_current=True,
-            show_speed=True,
-            show_bar=False,
-            header=None,
-            footer=False,
-        )
-        tracker.start()
-
         try:
-            for password in self.bruteForceGenerator(self.charset, self.MIN_LEN, self.MAX_LEN):
-                tracker.update(extra_info=f"trying: {password}")
+            for length, total_by_length, generator in PasswordCombinationGenerator.generateByLength(
+                self.charset, self.MIN_LEN, self.MAX_LEN
+            ):
+                self.logger.info(
+                    f"Controller::bruteForce::CHUNK_START::LEN::{length}::TOTAL::{total_by_length:,}"
+                )
+                print(f"\n>>> ATTACKING LENGTH {length}  ({total_by_length:,} combinations)")
 
-                if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
-                    elapsed = tracker.elapsed
-                    tracker.newline()
-                    self.logger.info(f"Controller::bruteForce::CRACK::OPERATIONS::{tracker.current}::TOTAL_TIME_SECONDS::{elapsed:.1f}")
-                    self.logger.info(f"Controller::bruteForce::OK::FILE::{self.RAR_FILE}::PASSWORD::{password}")
-                    print(f"\n\n🎉 ¡PASSWORD!: '{password}'")
-                    self.extractAndPrint(password)
+                tracker = BeautifulPrinter(
+                    label=f"TERMITES-L{length}",
+                    total=total_by_length,
+                    inline=True,
+                    update_every=100,
+                    show_current=True,
+                    show_speed=True,
+                    show_bar=False,
+                    header=None,
+                    footer=False,
+                )
+                tracker.start()
+
+                found = False
+                found_password = None
+
+                for password in generator:
+                    tracker.update(extra_info=f"trying: {password}")
+
+                    if WinrarService.tryPassword(self.rar_path, self.unrar_path, password):
+                        found = True
+                        found_password = password
+                        break
+
+                elapsed = tracker.elapsed
+                tracker.newline()
+
+                self.logger.info(
+                    f"Controller::bruteForce::CHUNK_END::LEN::{length}::"
+                    f"FOUND::{found}::TIME::{elapsed:.1f}s"
+                )
+
+                if found:
+                    self.logger.info(
+                        f"Controller::bruteForce::CRACK::LEN::{length}::"
+                        f"OPERATIONS::{tracker.current}::TOTAL_TIME_SECONDS::{elapsed:.1f}"
+                    )
+                    self.logger.info(
+                        f"Controller::bruteForce::OK::FILE::{self.RAR_FILE}::PASSWORD::{found_password}"
+                    )
+                    print(f"\n\n🎉 ¡PASSWORD!: '{found_password}'")
+                    self.extractAndPrint(found_password)
                     return
 
         except KeyboardInterrupt:
-            tracker.newline()
             self.logger.warn("Controller::bruteForce::STOP_PROCESS_BY_USER")
             return
-        tracker.newline()
+
         self.logger.info(f"Controller::bruteForce::DONT_CRACK_PASSWORD::FILE::{self.RAR_FILE}")
-
-    # ---------- Helpers internos ----------
-    def bruteForceGenerator(self, charset, min_len, max_len):
-        """Generador que produce todas las combinaciones posibles."""
-        for length in range(min_len, max_len + 1):
-            for combo in itertools.product(charset, repeat=length):
-                yield ''.join(combo)
-
-    def countCombinations(self, charset, min_len, max_len) -> int:
-        return sum(len(charset) ** n for n in range(min_len, max_len + 1))
 
     def extractAndPrint(self, password):
         self.logger.info(f"Controller::extractAndPrint::TRY::{password}")
