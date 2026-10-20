@@ -44,69 +44,75 @@ class Controller:
 
         repository = self.dependencies["work_repository"]
 
-        # LOAD PREVIOUS WORK
-        if repository.exists():
-            try:
-                self.work_state = repository.load()
+        # RAR must exist before we can compute its identity hash
+        if not os.path.isfile(self.rar_path):
+            raise FileNotFoundError(f"RAR file not found: {self.rar_path}")
 
-                self.logger.info(
-                    f"Controller::loadPreviousWork::FOUND::"
-                    f"STATUS::{self.work_state.status}"
-                )
-
-                self.logger.info(
-                    f"Controller::loadPreviousWork::"
-                    f"CURRENT_COLONY::{self.work_state.current_colony}::"
-                    f"CURRENT_INDEX::{self.work_state.current_colony_index}"
-                )
-
-                return self.work_state
-
-            except (OSError, ValueError, KeyError, TypeError) as e:
-                self.logger.error(
-                    f"Controller::loadPreviousWork::ERROR::{e}"
-                )
-                raise
-
-        # CREATE NEW WORK
-        self.logger.info("Controller::loadPreviousWork::NOT_FOUND")
-
-        charset_path = os.path.join(self.path, self.CHARSET_FILE)
-
-        with open(charset_path, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        charset = "".join(c for c in content if c not in ", \n\r\t")
-        charset = "".join(dict.fromkeys(charset))
-
-        if not charset:
-            raise ValueError("The charset cannot be empty.")
-
+        # Compute current identity
+        charset = self._loadCharset()
         min_len = int(self.MIN_LEN)
         max_len = int(self.MAX_LEN)
 
         if min_len < 1 or max_len < min_len:
             raise ValueError("Invalid password length range.")
 
+        attack_mode = self.config.getConfig("GEN_CONFIG_ATTACK_MODE")
+        rar_sha256 = WinrarService.computeSha256(self.rar_path)
+        rar_file = os.path.relpath(self.rar_path, self.path)
+        rar_size_bytes = os.path.getsize(self.rar_path)
         total_combinations = sum(
             len(charset) ** length
             for length in range(min_len, max_len + 1)
         )
 
-        rar_file = os.path.relpath(self.rar_path, self.path)
-        rar_size_bytes = (
-            os.path.getsize(self.rar_path)
-            if os.path.isfile(self.rar_path)
-            else 0
-        )
+        # LOAD PREVIOUS WORK
+        if repository.exists():
+            work = None
+            try:
+                work = repository.load()
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                # Corrupt or incompatible version: back up (preserve) and create new
+                self.logger.error(f"Controller::loadPreviousWork::CORRUPT::{e}")
+                try:
+                    backup_path = repository.backupCorrupt()
+                    self.logger.info(f"Controller::loadPreviousWork::BACKED_UP::{backup_path}")
+                except Exception as be:
+                    self.logger.error(f"Controller::loadPreviousWork::BACKUP_FAILED::{be}")
+                work = None
+
+            if work is not None:
+                if self._isCompatibleWork(work, charset, min_len, max_len, attack_mode, rar_sha256):
+                    self.work_state = work
+                    self.logger.info(
+                        f"Controller::loadPreviousWork::FOUND::"
+                        f"STATUS::{self.work_state.status}"
+                    )
+                    self.logger.info(
+                        f"Controller::loadPreviousWork::RESUME::"
+                        f"CURRENT_COLONY::{self.work_state.current_colony}::"
+                        f"CURRENT_INDEX::{self.work_state.current_colony_index}"
+                    )
+                    return self.work_state
+
+                # Incompatible identity: archive previous (preserve) and create new
+                self.logger.warn("Controller::loadPreviousWork::IDENTITY_MISMATCH")
+                try:
+                    archive_path = repository.archive()
+                    self.logger.info(f"Controller::loadPreviousWork::ARCHIVED::{archive_path}")
+                except Exception as ae:
+                    self.logger.error(f"Controller::loadPreviousWork::ARCHIVE_FAILED::{ae}")
+
+        # CREATE NEW WORK
+        self.logger.info("Controller::loadPreviousWork::NOT_FOUND_OR_ARCHIVED")
 
         self.work_state = WorkState(
             rar_file=rar_file,
+            rar_sha256=rar_sha256,
             rar_size_bytes=rar_size_bytes,
             charset=charset,
             min_len=min_len,
             max_len=max_len,
-            attack_mode=self.config.getConfig("GEN_CONFIG_ATTACK_MODE"),
+            attack_mode=attack_mode,
             status=WorkStatus.NEW,
             password_found=False,
             total_colonies=max_len - min_len + 1,
@@ -122,6 +128,35 @@ class Controller:
         )
 
         return self.work_state
+
+    def _loadCharset(self) -> str:
+        charset_path = os.path.join(self.path, self.CHARSET_FILE)
+
+        with open(charset_path, "r", encoding="utf-8") as file:
+            content = file.read()
+
+        charset = "".join(c for c in content if c not in ", \n\r\t")
+        charset = "".join(dict.fromkeys(charset))
+
+        if not charset:
+            raise ValueError("The charset cannot be empty.")
+
+        return charset
+
+    def _isCompatibleWork(self, work, charset: str, min_len: int, max_len: int, attack_mode: str, rar_sha256: str) -> bool:
+        """A previous work is reusable only if charset, lengths, strategy and RAR
+        content hash all match. An empty stored hash is NOT a validated identity."""
+        if work.charset != charset:
+            return False
+        if work.min_len != min_len or work.max_len != max_len:
+            return False
+        if work.attack_mode != attack_mode:
+            return False
+        if not work.rar_sha256:
+            return False
+        if work.rar_sha256 != rar_sha256:
+            return False
+        return True
 
 
     def bruteForce(self):

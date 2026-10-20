@@ -67,3 +67,20 @@ class JsonWorkRepository(IWorkRepository):
         os.replace(self.work_path, archive_path)
 
         return archive_path
+
+    def backupCorrupt(self) -> Optional[str]:
+        """Renombra work.json a work.corrupt.{timestamp}.json preservando el original."""
+        if not self.exists():
+            return None
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+        directory = os.path.dirname(self.work_path)
+        corrupt_path = os.path.join(
+            directory,
+            f"work.corrupt.{timestamp}.json"
+        )
+
+        os.replace(self.work_path, corrupt_path)
+
+        return corrupt_path

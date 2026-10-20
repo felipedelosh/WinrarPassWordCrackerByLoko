@@ -26,3 +26,7 @@ class IWorkRepository(ABC):
     @abstractmethod
     def archive(self) -> Optional[str]:
         pass
+
+    @abstractmethod
+    def backupCorrupt(self) -> Optional[str]:
+        pass
