@@ -183,7 +183,7 @@ class SequentialBruteForceService(IBruteForceService):
         self.logger.info(f"SequentialBruteForceService::_run_colony::SPAWN_COLONY::LEN::{length}")
         print(f"\n>>> SPAWNING COLONY :: LENGTH {length} :: FROM INDEX {start_index}")
         colony_path = TermiteService.spawnColony(
-            self.temp_path, self.charset, length, self.logger
+            self.temp_path, self.charset, length, self.logger, start_index=start_index
         )
         total = PasswordCombinationGenerator.countByLength(self.charset, length)
 
