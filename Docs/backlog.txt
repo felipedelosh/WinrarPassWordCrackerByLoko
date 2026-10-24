@@ -1,0 +1,33 @@
+ID|Tarea|Descripción|Prioridad|COMPLETADA
+AC1|Crear respaldo y pruebas de referencia|Conservar la versión funcional y registrar pruebas del comportamiento actual antes de refactorizar el motor.|🔴|NO
+AC2|Configurar cantidad máxima de trabajadores|Agregar TERMITES_CONCURRENCY_ATTACK al .env; validar mínimo 1 y máximo hardcoded; ejecutar siempre mediante hilos incluso con 1 trabajador.|🔴|NO
+AC3|Crear entidad WorkerState|Modelar worker_id, colonia actual, último índice confirmado y estado de cada trabajador.|🔴|NO
+AC4|Actualizar WorkState a versión 2|Incorporar worker_count inmutable y estados por trabajador sin perder identidad del RAR, configuración ni progreso anterior.|🔴|NO
+AC5|Validar invariantes del trabajo|Rechazar cambios de worker_count al reanudar y validar IDs, series, estado e índices de cada trabajador.|🔴|NO
+AC6|Implementar distribución matemática por series|Asignar a cada trabajador únicamente índices W*n+k, donde W es el total fijo de trabajadores y k su identificador.|🔴|NO
+AC7|Obtener contraseñas directamente por índice|Implementar acceso determinista a cada combinación sin recorrer ni generar combinaciones anteriores.|🔴|NO
+AC8|Refactorizar TermiteService para concurrencia|Adaptar creación, lectura, reutilización y eliminación de archivos de termitas para que cada trabajador gestione solo sus índices; evitar regeneración masiva innecesaria.|🔴|NO
+AC9|Coordinar finalización de colonias|Trabajar una colonia de longitud por vez y marcarla completada solo cuando todas las series hayan terminado o se haya encontrado la contraseña.|🔴|NO
+AC10|Actualizar JsonWorkRepository|Leer y escribir la versión 2 de work.json conservando validaciones y reemplazo atómico.|🔴|NO
+AC11|Centralizar la persistencia concurrente|Evitar escrituras simultáneas de trabajadores sobre work.json mediante un coordinador único y sincronización.|🔴|NO
+AC12|Implementar checkpoints individuales|Persistir el último índice confirmado de cada trabajador; nunca avanzar el progreso por error técnico o intento incompleto.|🔴|NO
+AC13|Recuperar trabajo interrumpido por trabajador|Al reiniciar, continuar cada serie desde su siguiente índice, respetando colonias completadas y la cantidad fija de trabajadores.|🔴|NO
+AC14|Gestionar trabajos anteriores versión 1|Detectar work.json antiguo y preservar o archivar de forma explícita el trabajo antes de migrar o iniciar uno nuevo.|🟡|NO
+AC15|Implementar TermiteWorker|Encapsular la ejecución de un hilo y el recorrido exclusivo de su serie con resultados CORRECT, INCORRECT y ERROR.|🔴|NO
+AC16|Crear ConcurrentBruteForceService|Sustituir el motor secuencial por un único coordinador con ThreadPoolExecutor para 1 a W trabajadores.|🔴|NO
+AC17|Implementar señal compartida de éxito|Usar threading.Event para detener hilos y un archivo attack.signal independiente de work.json para registrar FOUND, identificado con el trabajo actual.|🔴|NO
+AC18|Implementar detención coordinada al encontrar contraseña|Impedir nuevos intentos, esperar tareas en curso, registrar un solo ganador y persistir el estado FOUND de forma consistente.|🔴|NO
+AC19|Gestionar fallos e interrupciones concurrentes|Definir PAUSED, FAILED y errores transitorios; manejar Ctrl+C y cierres sin dar por completados intentos inconclusos.|🔴|NO
+AC20|Integrar Controller y DependencyInjector|Construir e iniciar únicamente el motor concurrente; validar configuración y recuperar trabajos existentes.|🔴|NO
+AC21|Revisar WinrarService para ejecución simultánea|Permitir comprobaciones independientes sobre el mismo RAR; separar archivos temporales por trabajador y diferenciar contraseñas incorrectas de errores técnicos.|🔴|NO
+AC22|Eliminar código y configuraciones obsoletas|Retirar referencias operativas a SequentialBruteForceService y modos de ataque ya innecesarios después de superar pruebas.|🟡|NO
+AC23|Actualizar documentación del proyecto|Actualizar CLAUDE.md, .env.example y documentación de series, estados, archivos, recuperación y límites.|🟡|NO
+AC24|Probar cobertura y exclusividad de series|Verificar con 1, 2, 3 y más trabajadores que todos los índices válidos se asignan exactamente una vez, sin colisiones ni omisiones.|🔴|NO
+AC25|Probar recuperación y fallos de persistencia|Simular interrupciones, checkpoints parciales, escritura fallida, JSON corrupto y reinicios sin saltarse candidatos.|🔴|NO
+AC26|Probar señal de finalización compartida|Verificar que FOUND detiene a todos los trabajadores, no duplica la finalización y no afecta trabajos nuevos por señales antiguas.|🔴|NO
+AC27|Medir rendimiento concurrente|Comparar 1, 2, 4 y más trabajadores con archivos RAR de prueba propios; medir beneficio y límites reales.|🟡|NO
+AC28|Ejecutar pruebas de regresión integrales|Comprobar que el nuevo motor con 1 trabajador conserva las funcionalidades válidas del sistema anterior.|🔴|NO
+AC29|Definir protocolo de archivos y checkpoints|Establecer cuándo se elimina una termita, cómo se recupera ante caída entre comprobación y eliminación y cómo se resuelven discrepancias con work.json.|🔴|NO
+AC30|Evitar ejecuciones simultáneas del mismo trabajo|Implementar un bloqueo por trabajo para impedir que dos procesos del programa usen el mismo work.json y las mismas termitas a la vez.|🔴|NO
+AC31|Probar coordinación y errores de carrera|Simular workers que avanzan o encuentran resultados simultáneamente; validar locks, persistencia, finalización y estado terminal.|🔴|NO
+AC32|Definir política de archivo attack.signal|Asociar la señal a un identificador del trabajo, escribirla de manera segura y definir su lectura, permanencia y limpieza al reiniciar.|🔴|NO
