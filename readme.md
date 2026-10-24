@@ -64,7 +64,9 @@ WinrarPassWordCrackerByLoko/
     │   └── Logger.py
     ├── Models/
     │   └── Enums/
-    │       └── Attack.py
+    │       ├── Attack.py
+    │       ├── PasswordTestResult.py
+    │       └── WorkStatus.py
     └── controllers/
         └── Controller.py
 ```
