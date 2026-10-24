@@ -97,7 +97,6 @@ out/
 .spyproject
 
 # ---------- Windows 11 ----------
-# Basura del Explorador de Windows
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
@@ -113,13 +112,13 @@ $RECYCLE.BIN/
 *.log
 ~$*
 
-# ---------- Sistema / Herramientas ----------
+# ---------- SYS TOOLS ----------
 .DS_Store
 .directory
 .AppleDouble
 .LSOverride
 
-# ---------- Datos locales y secretos ----------
+# ---------- SECRETS ----------
 .env
 .env.*
 !.env.example
@@ -130,23 +129,14 @@ config.local.*
 *.key
 *.crt
 
-# ---------- Logs y bases de datos locales ----------
+# ---------- Logs & DB ----------
 *.log
 *.sqlite
 *.sqlite3
 *.db
 
-# ---------- Archivos comprimidos (opcional) ----------
-# Descomenta si NO quieres versionar los .rar/.zip de prueba
-# *.rar
-# *.zip
-# *.7z
-
-# ---------- Salidas específicas de tu proyecto ----------
-# Si usas el script de recuperación RAR, ignora los extraídos
-extraido/
+# ---------- TEMP & OUTPUT ----------
 output/
-resultados/
 temp/
 
 # ----------- Extra Software -----------
