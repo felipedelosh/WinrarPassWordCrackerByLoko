@@ -1,0 +1,422 @@
+WINRARPASSWORDCRACKERBYLOKO
+DOCUMENTO DE INVESTIGACION Y DISENO
+MOTOR CONCURRENTE BASADO EN SERIES MATEMATICAS
+Fecha: 2026-10-24
+Estado: diseno acordado; nueva implementacion NO iniciada
+Fuente: conversaciones del proyecto, backlog y revision del codigo de WinrarPassWordCrackerByLoko.zip
+
+====================================================================
+0. PROPOSITO DE ESTE DOCUMENTO
+====================================================================
+Este documento es el punto de reanudacion del proyecto: explica el problema, las decisiones consensuadas, la demostracion matematica, el estado real de la version 7, las mejoras propuestas y los criterios para considerar terminada la migracion.
+
+El objetivo es recuperar la contrasena de un archivo RAR propio, con un unico motor que lance W hilos y distribuya exhaustivamente las combinaciones mediante series disjuntas. El trabajo debera poder interrumpirse y retomarse sin omitir candidatos. No hay que rehacer el repositorio desde cero: se autoriza refactorizar, reemplazar y eliminar todos los componentes necesarios.
+
+IMPORTANTE: El diseno NO significa que el motor concurrente ya exista. Las reglas y estructuras nuevas de este documento son propuestas acordadas, pendientes de implementacion y pruebas.
+
+====================================================================
+1. TERMINOLOGIA Y DECISIONES DEFINITIVAS
+====================================================================
+- ARCHIVO OBJETIVO: el RAR que se intenta abrir usando UnRAR.exe.
+- COLONIA: grupo de candidatos de una longitud fija L.
+- TERMITA FISICA: archivo TEMP/TERMITES-L{L}/{i}.txt que contiene el candidato del indice i.
+- TRABAJADOR / WORKER: hilo Python que procesa una serie exclusiva de indices dentro de la colonia actual.
+- W: numero fijo de trabajadores de un trabajo.
+- k: identificador del trabajador, entero entre 0 y W-1.
+- n: iteracion del trabajador, entero a partir de 0.
+- i: indice absoluto (dentro de la colonia) del candidato.
+- CHECKPOINT: ultimo indice cuya comprobacion termino con resultado inequívoco y cuyo avance esta confirmado en almacenamiento persistente.
+
+Decisiones consensuadas:
+D01. El programa SIEMPRE empleara el motor concurrente, incluso con W=1. No se conservara como alternativa funcional un motor secuencial independiente.
+D02. La configuracion provendra de TERMITES_CONCURRENCY_ATTACK="2" (ejemplo); W >= 1 y W <= limite maximo hardcoded.
+D03. W se escribe al crear el trabajo y NO cambia durante su vida. Si el .env difiere de W guardado, no se reanudara silenciosamente.
+D04. Las series matematicas asignan indices exclusivos a cada trabajador.
+D05. Se procesara una colonia de longitud L a la vez; la colonia se completa solo despues de terminar todas sus series y confirmar todos sus candidatos.
+D06. TEMP/work.json seguira guardando identidad del trabajo, estado y progreso INDIVIDUAL de cada trabajador.
+D07. Habra otra señal compartida independiente de work.json para comunicar que se encontro la contraseña. Nombre de trabajo propuesto: TEMP/attack.signal. Para notificacion inmediata dentro del proceso se usara threading.Event.
+D08. Los trabajadores pueden leer el mismo RAR; no se requieren N copias por defecto. Si existen temporales o extracciones, sus rutas deben estar aisladas por trabajador.
+D09. Una termita .txt que termino con contraseña INCORRECTA puede eliminarse. Si la comprobacion devuelve ERROR, el candidato no se da por agotado.
+D10. La refactorizacion puede modificar TODOS los archivos necesarios. Se debe conservar la arquitectura en capas y aprovechar el trabajo valido existente.
+D11. La validez matematica no reemplaza las pruebas de integracion y recuperacion real.
+
+Decisiones todavia por cerrar al implementar:
+P01. Valor numerico del maximo hardcoded
+
+Debido a que los procesadores modernos son de 12 hilos... vamos a hardcodear en el código un valor de maximo 8 trabajadores... 
+por ello si en el .env el usuario selecciona 20 o 30 hilos maximo serán 8 trabajdores.
+
+P02. Politica exacta de checkpoints: cada candidato o por lotes, y numero maximo aceptable de comprobaciones repetidas tras un corte.
+
+Se supone que un candidato se basa en la serie W*n + k... y cada que un candidato determina que la contraseña es invalida... muere... por ello no existe una forma de que dos candidatos tomen la misma serie.
+
+P03. Semantica definitiva de attack.signal:
+
+attack.signal es un archivo plano que contiene 0 si no se encontró respuesta... pero 1 cuando ya hay una termita que encuentra el valor.
+
+P04. Politica para work.json version 1:
+
+Pensar en la versión 2... que incluya cada estado de los trabajadores.
+
+P05. Politica de archivos termita: 
+
+Si el archivo no existe es por que ya se comprobó... recuerda que es eliminado una vez que se comprueba "contraseña invalida".
+
+====================================================================
+2. LA FORMULA CORRECTA: W*n + k
+====================================================================
+La expresion general es:
+    i(n,k) = W*n + k
+con W entero >= 1, k en {0,1,...,W-1}, n en {0,1,2,...}.
+
+La expresion mencionada informalmente "2W+N" NO es la formula general de distribucion. Para dos trabajadores se usan las series 2*n y 2*n+1. En general el factor multiplicativo es W y el desplazamiento es k: W*n+k.
+
+Caso W=1:
+  Worker 0: 1*n + 0 = 0,1,2,3,4,5,...
+  Es el caso de un solo hilo del mismo motor concurrente.
+
+Caso W=2:
+  Worker 0 (pares):   2*n+0 = 0,2,4,6,8,10,...
+  Worker 1 (impares): 2*n+1 = 1,3,5,7,9,11,...
+
+Caso W=3:
+  Worker 0: 3*n+0 = 0,3,6,9,12,...
+  Worker 1: 3*n+1 = 1,4,7,10,13,...
+  Worker 2: 3*n+2 = 2,5,8,11,14,...
+
+Caso W=4:
+  Worker 0: 0,4,8,12,...
+  Worker 1: 1,5,9,13,...
+  Worker 2: 2,6,10,14,...
+  Worker 3: 3,7,11,15,...
+
+TABLA DE EJEMPLO W=3, INDICES 0..14:
+  Indice 0 -> Worker 0 | 1 -> Worker 1 | 2 -> Worker 2
+  Indice 3 -> Worker 0 | 4 -> Worker 1 | 5 -> Worker 2
+  Indice 6 -> Worker 0 | 7 -> Worker 1 | 8 -> Worker 2
+  Indice 9 -> Worker 0 | 10 -> Worker 1 | 11 -> Worker 2
+  Indice 12 -> Worker 0 | 13 -> Worker 1 | 14 -> Worker 2
+
+Demostracion A: NINGUN INDICE SE ASIGNA A DOS TRABAJADORES DISTINTOS.
+Supongamos que W*n1 + k1 = W*n2 + k2.
+Entonces W*(n1-n2) = k2-k1.
+Como 0 <= k1,k2 < W, tenemos -(W-1) <= k2-k1 <= W-1.
+El unico multiplo de W en ese intervalo es 0.
+Por tanto k1=k2, y de ahi n1=n2.
+CONCLUSION: dos trabajadores diferentes no comparten indice si W permanece fijo.
+
+Demostracion B: TODOS LOS INDICES NO NEGATIVOS ESTAN CUBIERTOS.
+Para cualquier indice i>=0, el teorema de la division entera da unicos n y k:
+   n = i // W
+   k = i % W, con 0 <= k < W.
+Por tanto i = W*n + k; ese indice pertenece a exactamente un trabajador.
+CONCLUSION: no hay huecos matematicos en la distribucion.
+
+Demostracion C: SOLO SE GENERAN INDICES DENTRO DE LA COLONIA.
+Para longitud L y charset de tamano C, hay M=C^L candidatos.
+Cada worker k procesa solo i=W*n+k tales que 0<=i<M.
+El valor de n crece de uno en uno y el worker se detiene al obtener i>=M.
+Si W>M, algunos trabajadores no reciben candidatos; esto NO es un error.
+
+ASPECTO CRITICO: Esta demostracion asegura reparto exclusivo, NO asegura que un hilo haga una comprobacion exitosa, que un archivo no se corrompa, ni que un checkpoint se guarde correctamente. Esos son problemas independientes.
+
+====================================================================
+3. COMO OBTENER LA CONTRASENA DEL INDICE i
+====================================================================
+No es necesario recorrer desde 0 hasta i para conocer la combinacion. Si el charset ordenado es, por ejemplo, "012", C=3 y la longitud L=2, enumeramos:
+  0 -> 00
+  1 -> 01
+  2 -> 02
+  3 -> 10
+  4 -> 11
+  5 -> 12
+  6 -> 20
+  7 -> 21
+  8 -> 22
+
+Algoritmo conceptual de acceso directo, equivalente al orden lexicografico de itertools.product(charset,repeat=L):
+  validar 0 <= i < C^L
+  resultado = arreglo de L caracteres
+  para posicion de derecha a izquierda:
+      digito = i % C
+      resultado[posicion] = charset[digito]
+      i = i // C
+  unir resultado y devolver
+
+Ejemplo charset="012", L=2, indice=7:
+  7 % 3 = 1 -> posicion derecha '1'; 7 // 3 = 2
+  2 % 3 = 2 -> posicion izquierda '2'
+  Resultado: "21".
+
+Requisitos:
+- El charset debe tener orden fijo y caracteres distintos; duplicados producirian contraseñas repetidas.
+- Al reanudar deben verificarse charset, longitudes e identidad/hash del archivo RAR.
+- El indice es LOCAL a su colonia de longitud L: en L=2 existe 0.txt y en L=3 tambien existe 0.txt, pero representan contraseñas diferentes.
+- El archivo fisico {i}.txt, si se mantiene, debe representar exactamente la contraseña calculada para (L,i).
+
+====================================================================
+4. COMO SE EJECUTA UN ATAQUE CONCURRENTE
+====================================================================
+Ejemplo: charset="0123456789", longitudes 2 a 4, W=2.
+Numero de colonias: 3 (L=2, L=3, L=4).
+Candidatos de L=2: 10^2=100.
+Candidatos de L=3: 10^3=1000.
+Candidatos de L=4: 10^4=10000.
+Total: 11100 candidatos.
+
+SECUENCIA GLOBAL PROPUESTA:
+1. Controller solicita iniciar o reanudar un trabajo.
+2. Validar RAR, UnRAR.exe, charset, longitudes, W y limite hardcoded.
+3. Cargar work.json compatible o crear un estado version 2 de forma segura.
+4. Validar que W del .env coincide con el worker_count fijado en ese trabajo.
+5. Adquirir bloqueo de proceso para evitar dos ejecuciones sobre el mismo trabajo.
+6. Inicializar coordinador, hilo(s), Event y señal de archivo asociada al job_id.
+7. Elegir la primera colonia incompleta L.
+8. Cada worker k obtiene su siguiente i de la serie W*n+k, desde su propio checkpoint confirmado.
+9. Calcular candidato de (L,i), verificarlo con UnRAR.exe, y tratar el resultado:
+    INCORRECT: registrar avance confirmado y limpiar su termita fisica segun el protocolo elegido.
+    CORRECT: registrar hallazgo mediante el coordinador, activar Event y señal persistente; detener asignaciones nuevas.
+    ERROR: NO confirmar ese indice; suspender o reintentar segun politica explicita.
+10. Los trabajadores revisan Event antes de comenzar otra comprobacion.
+11. El coordinador consolida checkpoints, espera las ejecuciones en curso y persiste el estado final.
+12. Marcar una colonia como completa SOLO cuando todos los trabajadores agotan sus indices confirmados.
+13. Pasar a la colonia L+1. Al agotar todas, marcar COMPLETED; si se halla contraseña, FOUND.
+
+Se usa el MISMO archivo de lectura RAR para todos los hilos. No se crean copias N del RAR por defecto. Se deben aislar las rutas temporales si UnRAR realiza extracciones o escribe resultados; la comprobacion no debe hacer que los workers sobrescriban archivos compartidos.
+
+Los hilos de Python son viables porque Python coordina procesos externos UnRAR.exe mediante subprocess. El GIL del CPython tradicional no impide que varios procesos UnRAR.exe hagan trabajo al mismo tiempo. El rendimiento real debe medirse; aumentar W puede saturar CPU, E/S o el coste de iniciar procesos.
+
+====================================================================
+5. RECUPERACION CON CHECKPOINT POR TRABAJADOR
+====================================================================
+Cada worker mantiene un checkpoint por colonia:
+  worker_id, current_colony, last_completed_index, status.
+Se requiere tambien el worker_count INMUTABLE del trabajo.
+
+EJEMPLO: W=3, colonia L=3:
+  Worker 0: ultimo 12 -> siguiente 15.
+  Worker 1: ultimo 10 -> siguiente 13.
+  Worker 2: ultimo 8  -> siguiente 11.
+
+La regla de reanudacion es:
+   siguiente_indice = last_completed_index + W
+Siempre que last_completed_index pertenezca a la serie del worker y su checkpoint inicial se represente correctamente. Para worker k sin trabajo confirmado, se empieza en k (NO se suma W a un -1 generico, pues eso fallaria para k>0).
+
+Ejemplo de bloque ILUSTRATIVO (NO esquema definitivo completo):
+{
+  "version": 2,
+  "status": "RUNNING",
+  "current_colony": 3,
+  "worker_count": 3,
+  "workers": [
+    {"worker_id": 0, "current_colony": 3, "last_completed_index": 12, "status": "RUNNING"},
+    {"worker_id": 1, "current_colony": 3, "last_completed_index": 10, "status": "RUNNING"},
+    {"worker_id": 2, "current_colony": 3, "last_completed_index": 8,  "status": "RUNNING"}
+  ]
+}
+
+El JSON real tambien debe conservar rar_file, rar_sha256, rar_size_bytes, charset, min_len, max_len, completed_colonies, contadores, fechas y metadata.
+
+CONDICION INDISPENSABLE: "last_completed_index" debe significar un prefijo CONTIGUO confirmado DENTRO DE LA SERIE del trabajador, no sencillamente el maximo indice que vio. Si el worker 0 falla en 12 pero confirma 15, escribir 15 como checkpoint omitiria 12 al reanudar. Solucion inicial recomendada: cada worker ejecuta su propia serie uno a uno y se detiene o reintenta al recibir ERROR, sin adelantar el checkpoint por encima de un hueco.
+
+Escritura simultanea: NO permitir que los workers guarden cada uno su propio work.json completo sin coordinacion; una actualizacion puede borrar la de otro. El coordinador conserva un estado compartido protegido por lock y un UNICO escritor serializa checkpoints de manera atomica con archivo temporal y os.replace. En caso de fallo de disco, detener o dejar el estado anterior utilizable, nunca reportar una confirmacion que no fue persistida.
+
+REINICIO TRAS CAIDA: si una comprobacion termino pero no se guardo el checkpoint, puede repetirse: eso es ACEPTABLE. Lo inaceptable es saltar una contraseña que nunca se verifico.
+
+====================================================================
+6. QUE PAPEL TIENEN LOS ARCHIVOS DE TERMITAS
+====================================================================
+Comportamiento conceptual actual:
+  TEMP/TERMITES-L2/0.txt -> candidato del indice 0
+  TEMP/TERMITES-L2/1.txt -> candidato del indice 1
+  ...
+  Un resultado INCORRECT permite eliminar su archivo.
+
+La observacion del autor es valida: si cada trabajador controla solo indices de su serie, no existe motivo normal para que Worker 0 elimine una termita de Worker 1. Las series evitan el choque de asignacion.
+
+Pero ausencia de archivo != prueba incontrovertible de intento realizado:
+  - El archivo puede haber sido eliminado manualmente.
+  - Una escritura puede fallar.
+  - El proceso puede caer entre verificar, borrar y persistir.
+  - TermiteService puede regenerar o limpiar archivos de manera automatica.
+
+CONSENSO ACTUAL: work.json conserva el progreso verificable de cada trabajador. Los archivos fisicos representan recursos/materializaciones de candidatos, no sustituyen automaticamente los checkpoints. Si se desea cambiarlos a fuente principal de verdad, hay que diseñar explicitamente un protocolo transaccional distinto; NO esta aprobado en esta etapa.
+
+MEJORA PROPUESTA: no crear millones de .txt de una sola vez. Calcular el candidato por indice y materializar una termita solo cuando haga falta, o eliminar el requisito del archivo individual si se decide conscientemente. Si se conservan .txt, su escritura y lectura deben ser seguras e independientes por trabajador; no es necesario que existan todos por adelantado.
+
+====================================================================
+7. SEÑAL COMPARTIDA DE EXITO (SEPARADA DE work.json)
+====================================================================
+Requisito del autor: cada trabajador debe poder conocer si otro ya tuvo exito consultando un mecanismo comun distinto del archivo de progreso.
+
+DISEÑO PROPUESTO:
+  threading.Event: notificacion inmediata entre hilos del mismo proceso.
+  TEMP/attack.signal: registro durable del hallazgo, asociado al identificador del trabajo.
+  work.json: estado global confirmado y checkpoints, actualizado por el coordinador.
+
+AL ENCONTRAR LA CONTRASEÑA:
+1. El trabajador informa al coordinador del resultado CORRECT.
+2. El coordinador registra una unica decision ganadora; activa Event.
+3. El coordinador escribe la señal persistente atomica con job_id y estado FOUND (sin grabar contraseña necesariamente).
+4. Los demas workers dejan de seleccionar candidatos nuevos y finalizan las comprobaciones en curso de manera controlada.
+5. El coordinador persiste work.json como FOUND y gestiona la extraccion/salida de forma unica.
+
+Una señal vieja NO debe detener un trabajo nuevo: comprobar job_id y/o identidad, y tratar la limpieza solo cuando sea seguro. Si el proceso cae entre escribir attack.signal y guardar work.json, la recuperacion debe reconciliar ambos registros sin asumir exito de un archivo ajeno. El formato final y el orden de operaciones se decidiran e implementaran con pruebas de fallos.
+
+====================================================================
+8. ESTADO ACTUAL COMPROBADO EN LA VERSION 7 (2026-10-24)
+====================================================================
+Archivo inspeccionado: WinrarPassWordCrackerByLoko(7).zip.
+
+EXISTE Y FUNCIONA COMO DISEÑO SECUENCIAL (segun codigo, no se ejecutaron aqui pruebas de ataque):
+- main.py: punto de entrada.
+- src/controllers/Controller.py: carga o crea un trabajo y orquesta.
+- src/CORE/DependencyInjector.py: construye las dependencias.
+- src/Application/services/CRACKER/IBruteForceService.py: contrato base.
+- src/Infrastructure/services/CRACKER/SequentialBruteForceService.py: MOTOR ACTUAL, un ciclo secuencial por indice y colonia.
+- src/Infrastructure/services/PasswordCombinationGenerator.py: generador itertools.product por longitud y contadores.
+- src/Infrastructure/services/TermiteService.py: genera TEMP/TERMITES-L{length}/{index}.txt; admite start_index; reutiliza archivos existentes validos; limpia indices inferiores confirmados; readTermite, kill y survive.
+- src/Infrastructure/services/WinrarService.py: comunicacion con UnRAR.exe para comprobar candidatos.
+- src/Models/Entities/WorkState.py: dataclass version=1, current_colony, current_colony_index, completed_colonies, estado, identidad RAR, flush_interval=100 por defecto.
+- src/Models/Enums/WorkStatus.py: NEW, RUNNING, PAUSED, COMPLETED, FOUND, FAILED.
+- src/Models/Enums/PasswordTestResult.py: CORRECT, INCORRECT, ERROR.
+- src/Application/repositories/IWorkRepository.py + src/Infrastructure/repositories/JsonWorkRepository.py: abstraccion y almacenamiento JSON.
+- .env: parametros del archivo RAR, charset, longitudes y modo actual.
+- CLAUDE.md: instrucciones arquitectonicas del repositorio.
+
+LIMITACIONES CONFIRMADAS:
+L01. NO hay workers/hilos de ataque ni ThreadPoolExecutor en el motor actual.
+L02. WorkState no guarda una lista de checkpoints por trabajador ni worker_count.
+L03. El generador disponible enumera combinaciones; no expone un acceso directo por indice como servicio publico.
+L04. TermiteService.spawnColony genera por adelantado los archivos pendientes de una longitud, potencialmente muchisimos.
+L05. El flujo actual se basa en un solo current_colony_index; insuficiente para series concurrentes.
+L06. No existe el nuevo archivo de señal compartida acordado para hallazgos concurrentes.
+L07. JsonWorkRepository requiere control de acceso / un escritor para garantizar que los checkpoints de hilos no se pisen.
+
+OBSERVACION DE ROBUSTEZ: TermiteService.kill() y survive() capturan errores y no los propagan. Debe definirse como diferenciar limpieza fallida de progreso validado. Ademas, la interpretacion de errores de UnRAR.exe debe impedir clasificar un fallo tecnico como contraseña incorrecta.
+
+NO SE HA IMPLEMENTADO TODAVIA:
+- ConcurrentBruteForceService, TermiteWorker, WorkerState.
+- W fijo por trabajo y series W*n+k.
+- work.json version 2 y señal compartida.
+- Coordinador de persistencia y parada concurrente.
+
+====================================================================
+9. ARQUITECTURA OBJETIVO Y REFACTORIZACION
+====================================================================
+No crear un repositorio nuevo. Reemplazar y adaptar archivos existentes sin conservar el modo secuencial como variante operativa.
+
+PROPUESTA:
+main.py
+  -> Controller
+     -> DependencyInjector
+        -> ConcurrentBruteForceService : IBruteForceService
+            -> Coordinador de colonias y workers
+            -> W instancias logicas TermiteWorker (ThreadPoolExecutor)
+                -> Generador por indice (L,i)
+                -> WinrarService / UnRAR.exe
+                -> TermiteService (si se conservan .txt)
+            -> Estado compartido protegido y unico escritor work.json
+            -> threading.Event + AttackSignalService / attack.signal
+
+CONSERVAR Y ADAPTAR:
+- Controller, DependencyInjector, IBruteForceService.
+- JsonWorkRepository e IWorkRepository.
+- WinrarService, PasswordTestResult, WorkStatus.
+- Logger, Config, FolderController.
+- TermiteService solo si sigue teniendo utilidad clara en el modelo nuevo.
+
+CREAR O REDEFINIR:
+- WorkerState, WorkState version 2.
+- ConcurrentBruteForceService, TermiteWorker.
+- Acceso directo por indice en PasswordCombinationGenerator.
+- Coordinador de checkpoints (puede ser parte del servicio; evitar clases vacias).
+- AttackSignalService si se necesita encapsular la señal persistente.
+
+ELIMINAR DESPUES DE VALIDAR:
+- SequentialBruteForceService como motor operativo.
+- Configuracion/enum Attack.SEQUENTIAL versus PARALLEL si ya no existe eleccion de estrategias.
+- Metodos sin consumidores y codigo redundante.
+
+PRINCIPIO DE ARQUITECTURA: contratos en Application, implementaciones en Infrastructure, entidades en Models/Entities, enums en Models/Enums; construir dependencias en CORE/DependencyInjector. Respetar convenciones existentes y mantener cambios testeables.
+
+====================================================================
+10. PLAN DE IMPLEMENTACION VINCULADO AL BACKLOG
+====================================================================
+Documento operativo: Backlog_Ataques_Concurrentes_Series.txt (IDs AC1..AC32).
+
+ETAPA 1 - BASE Y DOMINIO (AC1..AC5):
+  Crear respaldo y pruebas de referencia; validar TERMITES_CONCURRENCY_ATTACK con minimo 1 y maximo hardcoded; definir WorkerState, WorkState v2 e invariantes W inmutable.
+
+ETAPA 2 - MATEMATICAS Y TERMITAS (AC6..AC9):
+  Implementar series W*n+k, acceso directo (L,i), revisar los archivos .txt y barrera de finalizacion por colonia.
+
+ETAPA 3 - PERSISTENCIA (AC10..AC14):
+  Adaptar JsonWorkRepository, unico escritor, checkpoints por trabajador, reanudacion y proteccion de version 1.
+
+ETAPA 4 - CONCURRENCIA (AC15..AC19):
+  Implementar workers, ThreadPoolExecutor, Event y attack.signal, parada global segura y politica de errores.
+
+ETAPA 5 - INTEGRACION (AC20..AC23):
+  Integrar Controller/DependencyInjector/WinrarService; retirar lo obsoleto; actualizar CLAUDE.md y documentacion.
+
+ETAPA 6 - VERIFICACION (AC24..AC28):
+  Pruebas de cobertura y exclusividad, recuperacion, señal, rendimiento y regresion con W=1.
+
+CONTROLES ADICIONALES (AC29..AC32):
+  Orden entre borrado fisico y checkpoint; exclusion entre dos procesos; pruebas de carrera; ciclo de vida y antiguedad de attack.signal.
+
+No se considera implementada una tarea hasta que se revise su codigo y pase la prueba correspondiente. La lista del backlog es una planificacion, no una certificacion de completitud.
+
+====================================================================
+11. PRUEBAS DE ACEPTACION IMPRESCINDIBLES
+====================================================================
+P1. Para W=1, W=2, W=3 y W=4, la union de indices producidos es exactamente {0,...,M-1}; intersecciones entre trabajadores son vacias.
+P2. Las series siguen siendo correctas cuando W>M y cuando M no es multiplo de W.
+P3. El acceso por indice reproduce exactamente el orden de itertools.product actual.
+P4. Con W=1 se usa el motor concurrente y un worker, no el motor antiguo.
+P5. Si se interrumpe un worker, cada trabajador vuelve a su PROPIO ultimo checkpoint, sin salto de indices.
+P6. El fallo tecnico ERROR no avanza el checkpoint del candidato afectado.
+P7. Dos workers no pisan la persistencia; el archivo work.json queda parseable tras una interrupcion durante su escritura.
+P8. Modificar W en .env tras crear el trabajo se rechaza de manera explicita sin sobrescribir estado.
+P9. Si un worker encuentra CORRECT, los demas dejan de iniciar comprobaciones nuevas y FOUND se registra una sola vez.
+P10. Una señal anterior de otro trabajo no dispara una finalizacion erronea.
+P11. Dos instancias independientes de la aplicacion no pueden escribir a la vez el mismo trabajo.
+P12. No se marca COLONY_COMPLETED mientras algun trabajador tenga indices pendientes.
+P13. No se salta una contraseña si el proceso cae entre comprobacion, borrado fisico y guardado de checkpoint.
+P14. Las comprobaciones concurrentes con UnRAR no pisan rutas de salida ni extraen de forma conflictiva.
+P15. El trabajo v1 se trata con politica segura, nunca se destruye automaticamente.
+P16. Las pruebas de rendimiento registran tiempo total y tasa de candidatos para W=1/2/4 sin prometer aceleracion lineal.
+
+Usar RARs de prueba creados y controlados por el autor, con contraseñas conocidas y espacios de busqueda pequeños; para tests unitarios de concurrencia simular WinrarService para obtener resultados deterministas.
+
+====================================================================
+12. RIESGOS, ERRORES A EVITAR Y PRINCIPIOS
+====================================================================
+R1. CONFUNDIR SERIE Y CHECKPOINT: W*n+k reparte indices, pero no persiste resultados ni impide adelantar un checkpoint por encima de un ERROR.
+R2. CONFUNDIR ARCHIVO AUSENTE CON CONTRASENA VERIFICADA: el borrado no es una prueba suficiente por si mismo.
+R3. VARIOS ESCRITORES DEL JSON: peligro de perder avances entre hilos; usar serializacion y un escritor.
+R4. W VARIABLE: cambiarlo reordena residuos y puede crear duplicados u omisiones; rechazar cambios.
+R5. CREAR MILLONES DE .txt: coste de disco y memoria de metadatos; preferir materializacion bajo demanda o candidatos en memoria.
+R6. GIL: no impide las llamadas UnRAR externas concurrentes, pero concurrencia no implica aumento lineal de velocidad.
+R7. PROCESOS DUPLICADOS: las series solo evitan choques dentro de una ejecucion; un bloqueo externo impide dos ejecuciones del mismo trabajo.
+R8. EXITO Y CORTE: Event para informar de inmediato, archivo durable asociado al job_id, reconciliation de señales tras reinicio.
+R9. CONTRASENAS EN LOGS: evitar registrar candidatos o contrasenas en logs y JSON; proteger resultados finales segun necesidad.
+R10. CODIGOS DE UNRAR: diferenciar contraseña incorrecta de fallo tecnico, permisos, corrupcion y timeout.
+
+====================================================================
+13. RESUMEN EJECUTIVO PARA RETOMAR LA TAREA
+====================================================================
+QUEREMOS:
+  Que WinrarPassWordCrackerByLoko utilice SIEMPRE hilos, incluso W=1, para comprobar contraseñas de un RAR; que cada worker k recorra la serie i=W*n+k dentro de cada colonia L, sin colisiones y con cobertura total; que W se determine al crear el trabajo mediante TERMITES_CONCURRENCY_ATTACK y NO cambie; que cada trabajador registre su checkpoint en work.json version 2; que todos se detengan si alguno encuentra la contraseña, usando threading.Event y señal independiente attack.signal; que el programa pueda reiniciarse y continuar sin omitir candidatos.
+
+DONDE ESTAMOS:
+  El ZIP version 7 tiene motor secuencial, WorkState v1 con un solo indice y archivos de termitas por indice. Tiene repositorio JSON, verificacion con UnRAR, enums de resultado, carga y reanudacion parcial. NO tiene el nuevo motor concurrente.
+
+COMO EMPEZAMOS:
+  Seguir Backlog_Ataques_Concurrentes_Series.txt desde AC1. Primero crear pruebas base, W y WorkerState/WorkState v2, luego comprobar formalmente series y acceso directo por indice, despues persistencia segura y finalmente hilos, señal y limpieza del codigo antiguo.
+
+CRITERIO DE EXITO:
+  Las pruebas P1..P16 pasan, no hay contraseñas omitidas, las series no se cruzan, la interrupcion permite reanudacion segura y un worker ganador detiene al resto con resultado persistido. Solo entonces se considera alcanzado el objetivo "Ataques concurrentes basados en series".
+
+FIN DEL DOCUMENTO.
